@@ -6,14 +6,12 @@ import java.util.concurrent.atomic.AtomicLong
 
 class StateManager {
 
-    // Основные флаги состояния
     val isRunning = AtomicBoolean(false)
     val exitingCalendar = AtomicBoolean(false)
     val goingToWarehouses = AtomicBoolean(false)
     val waitingForWarehouseLoad = AtomicBoolean(false)
     val monthClicked = AtomicBoolean(false)
 
-    // Временные метки
     @Volatile var lastMonthText: String? = null
     @Volatile var pendingMonthTarget: Int? = null
     @Volatile var currentStep = 0
@@ -25,13 +23,11 @@ class StateManager {
     @Volatile var forceGoToWarehousesOnStart = false
     @Volatile var lastSelectedBookingDate: String? = null
 
-    // Счётчики для автоматической скорости
     val consecSuccessGestures = AtomicInteger(0)
     val consecCancelledGestures = AtomicInteger(0)
     @Volatile var lastProfileChangeTime = 0L
     @Volatile var autoCurrentLevel = 2
 
-    // UI стабильность
     @Volatile var lastDomHash: Int = 0
     @Volatile var domStableCount = 0
     @Volatile var lastUiChangeTime = 0L
@@ -39,18 +35,15 @@ class StateManager {
     @Volatile var freezeDetectedHash = 0
     val restartCount = AtomicInteger(0)
 
-    // Память и GC
     val lastGcTime = AtomicLong(0L)
     val tickCount = AtomicLong(0L)
     @Volatile var lastTelegramReportTime = 0L
     @Volatile var lastRamWarningTime = 0L
 
-    companion object {
-        const val POPUP_DISMISS_COOLDOWN = 500L
-        const val PROFILE_CHANGE_MIN_INTERVAL = 8_000L
-        const val SUCCESS_TO_SPEEDUP = 8
-        const val FAILS_TO_SLOWDOWN = 3
-    }
+    val POPUP_DISMISS_COOLDOWN = 500L
+    val PROFILE_CHANGE_MIN_INTERVAL = 8_000L
+    val SUCCESS_TO_SPEEDUP = 8
+    val FAILS_TO_SLOWDOWN = 3
 
     fun reset() {
         exitingCalendar.set(false)

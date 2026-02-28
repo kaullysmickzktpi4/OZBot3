@@ -1,4 +1,4 @@
-package com.ozbot.navigation
+package com.ozbot.automation.navigation
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription

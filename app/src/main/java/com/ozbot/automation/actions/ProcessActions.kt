@@ -1,4 +1,4 @@
-package com.ozbot.actions
+package com.ozbot.automation.actions
 
 import android.graphics.Rect
 import android.view.accessibility.AccessibilityNodeInfo
@@ -9,7 +9,8 @@ import com.ozbot.automation.utils.NodeTreeHelper
 import com.ozbot.automation.utils.SpeedProfile
 import com.ozbot.bot.DomUtils
 import com.ozbot.data.UserPreferences
-import com.ozbot.navigation.GestureHelper
+import com.ozbot.automation.navigation.GestureHelper
+import com.ozbot.automation.navigation.NavigationHelper
 
 class ProcessActions(
     private val prefs: UserPreferences,

@@ -1,11 +1,12 @@
-package com.ozbot.actions
+package com.ozbot.automation.actions
 
 import android.view.accessibility.AccessibilityNodeInfo
 import com.ozbot.automation.core.StateManager
 import com.ozbot.automation.utils.Logger
 import com.ozbot.automation.utils.SpeedProfile
 import com.ozbot.bot.DomUtils
-import com.ozbot.navigation.GestureHelper
+import com.ozbot.automation.navigation.GestureHelper
+import com.ozbot.automation.navigation.NavigationHelper
 
 class WarehouseActions(
     private val stateManager: StateManager,

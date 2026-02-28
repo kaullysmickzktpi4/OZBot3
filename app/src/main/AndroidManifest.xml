@@ -4,7 +4,10 @@
 
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 
     <application
         android:name=".OZBotApplication"
@@ -16,7 +19,6 @@
         android:theme="@style/Theme.OZBot"
         tools:targetApi="31">
 
-        <!-- Launcher Activity -->
         <activity
             android:name=".LauncherActivity"
             android:exported="true"
@@ -27,7 +29,6 @@
             </intent-filter>
         </activity>
 
-        <!-- AccessibilityService -->
         <service
             android:name="com.ozbot.automation.OzonHireAutomationService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
@@ -40,9 +41,9 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
-        <!-- Floating Window Service -->
         <service
             android:name="com.ozbot.service.FloatingWindowService"
+            android:foregroundServiceType="specialUse"
             android:exported="false" />
 
     </application>

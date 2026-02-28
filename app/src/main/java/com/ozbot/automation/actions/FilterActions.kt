@@ -1,4 +1,4 @@
-package com.ozbot.actions
+package com.ozbot.automation.actions
 
 import android.accessibilityservice.AccessibilityService
 import android.graphics.Rect
@@ -11,8 +11,8 @@ import com.ozbot.automation.utils.Logger
 import com.ozbot.automation.utils.NodeTreeHelper
 import com.ozbot.automation.utils.SpeedProfile
 import com.ozbot.bot.DomUtils
-import com.ozbot.navigation.GestureHelper
-import com.ozbot.navigation.NavigationHelper
+import com.ozbot.automation.navigation.GestureHelper
+import com.ozbot.automation.navigation.NavigationHelper
 
 class FilterActions(
     private val service: AccessibilityService,

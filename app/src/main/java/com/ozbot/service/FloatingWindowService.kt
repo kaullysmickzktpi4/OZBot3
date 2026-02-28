@@ -529,7 +529,13 @@ class FloatingWindowService : Service() {
             return
         }
 
-        TelegramBot.init(token, chatId)
+        TelegramBot.init(
+            token = token,
+            admin = chatId,
+            devId = userPreferences.deviceId,
+            devLabel = userPreferences.deviceLabel,
+            wl = userPreferences.whitelist
+        )
         TelegramBot.sendTestMessage()
         Toast.makeText(this, "✅ Тест отправлен! Проверьте Telegram", Toast.LENGTH_SHORT).show()
     }
@@ -547,7 +553,13 @@ class FloatingWindowService : Service() {
         userPreferences.telegramReportIntervalMin = interval
 
         if (enabled && token.isNotBlank() && chatId.isNotBlank()) {
-            TelegramBot.init(token, chatId)
+            TelegramBot.init(
+                token = token,
+                admin = chatId,
+                devId = userPreferences.deviceId,
+                devLabel = userPreferences.deviceLabel,
+                wl = userPreferences.whitelist
+            )
         }
 
         // Уведомления друзьям

@@ -1,4 +1,4 @@
-package com.ozbot.actions
+package com.ozbot.automation.actions
 
 import android.graphics.Rect
 import android.os.Handler
@@ -11,7 +11,8 @@ import com.ozbot.bot.DomUtils
 import com.ozbot.data.UserPreferences
 import com.ozbot.data.repository.BookingRepository
 import com.ozbot.data.database.BookingStatus
-import com.ozbot.navigation.GestureHelper
+import com.ozbot.automation.navigation.GestureHelper
+import com.ozbot.automation.navigation.NavigationHelper
 import com.ozbot.telegram.TelegramBot
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch

@@ -10,11 +10,11 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.core.app.NotificationCompat
 import com.ozbot.R
-import com.ozbot.actions.CalendarActions
-import com.ozbot.actions.FilterActions
-import com.ozbot.actions.ProcessActions
-import com.ozbot.actions.TimePickerActions
-import com.ozbot.actions.WarehouseActions
+import com.ozbot.automation.actions.CalendarActions
+import com.ozbot.automation.actions.FilterActions
+import com.ozbot.automation.actions.ProcessActions
+import com.ozbot.automation.actions.TimePickerActions
+import com.ozbot.automation.actions.WarehouseActions
 import com.ozbot.automation.core.ScreenDetector
 import com.ozbot.automation.core.StateManager
 import com.ozbot.automation.monitoring.FreezeDetector
@@ -28,14 +28,17 @@ import com.ozbot.bot.DomUtils
 import com.ozbot.data.UserPreferences
 import com.ozbot.data.database.AppDatabase
 import com.ozbot.data.repository.BookingRepository
-import com.ozbot.navigation.GestureHelper
-import com.ozbot.navigation.NavigationHelper
+import com.ozbot.automation.navigation.GestureHelper
+import com.ozbot.automation.navigation.NavigationHelper
 import com.ozbot.telegram.TelegramBot
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import java.lang.ref.WeakReference
+import com.ozbot.utils.ScreenshotHelper
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 class OzonHireAutomationService : AccessibilityService() {
 
@@ -258,8 +261,6 @@ class OzonHireAutomationService : AccessibilityService() {
         logger.d("⚡ Profile: $profile")
     }
 
-    // ==================== TELEGRAM ====================
-
     private fun initTelegram() {
         if (!prefs.telegramEnabled) {
             TelegramBot.setCommandHandler(null)
@@ -267,59 +268,75 @@ class OzonHireAutomationService : AccessibilityService() {
             return
         }
 
-        TelegramBot.init(prefs.telegramBotToken, prefs.telegramChatId)
+        TelegramBot.init(
+            token = prefs.telegramBotToken,
+            admin = prefs.adminChatId,
+            devId = prefs.deviceId,
+            devLabel = prefs.deviceLabel,
+            wl = prefs.whitelist
+        )
+
         TelegramBot.setCommandHandler(object : TelegramBot.CommandHandler {
             override fun onStartAutomation(): String {
-                return if (isAutomationRunning()) {
-                    "⚠️ Автоматизация уже запущена"
-                } else {
-                    startAutomation()
-                    "▶️ Запускаю автоматизацию"
-                }
+                return if (isAutomationRunning()) "⚠️ Автоматизация уже запущена"
+                else { startAutomation(); "▶️ Запускаю автоматизацию" }
             }
-
             override fun onStopAutomation(): String {
-                return if (!isAutomationRunning()) {
-                    "ℹ️ Автоматизация уже остановлена"
-                } else {
-                    stopAutomation()
-                    "⏹ Останавливаю автоматизацию"
-                }
+                return if (!isAutomationRunning()) "ℹ️ Автоматизация уже остановлена"
+                else { stopAutomation(); "⏹ Останавливаю автоматизацию" }
             }
-
             override fun onAddDate(date: String): String {
                 val current = prefs.targetDates.toMutableSet()
-                if (!current.add(date)) {
-                    return "ℹ️ Дата $date уже есть в поиске"
-                }
+                if (!current.add(date)) return "ℹ️ Дата $date уже есть в поиске"
                 prefs.targetDates = current.sortedByDate()
                 return "✅ Добавил дату $date в поиск"
             }
-
             override fun onRemoveDate(date: String): String {
                 val current = prefs.targetDates.toMutableSet()
-                if (!current.remove(date)) {
-                    return "ℹ️ Даты $date нет в списке"
-                }
+                if (!current.remove(date)) return "ℹ️ Даты $date нет в списке"
                 prefs.targetDates = current.sortedByDate()
                 return "🗑 Удалил дату $date"
             }
-
             override fun onListDates(): String {
                 val dates = prefs.targetDates.sortedByDate()
-                return if (dates.isEmpty()) "📭 Список дат пуст" else "📅 Даты поиска: ${dates.joinToString(", ")}"
+                return if (dates.isEmpty()) "📭 Список дат пуст"
+                else "📅 Даты поиска: ${dates.joinToString(", ")}"
             }
-
             override fun onStatus(): String {
                 val running = if (isAutomationRunning()) "🟢 работает" else "🔴 остановлен"
                 val dates = prefs.targetDates.sortedByDate()
-                val datesStr = if (dates.isEmpty()) "нет" else dates.joinToString(", ")
-                return """
-🤖 Статус: $running
-🏭 Склад: ${prefs.warehouse.ifBlank { "не выбран" }}
-📋 Процесс: ${prefs.process.ifBlank { "не выбран" }}
-📅 Даты: $datesStr
-                """.trimIndent()
+                return "🤖 Статус: $running\n🏭 Склад: ${prefs.warehouse.ifBlank { "не выбран" }}\n📋 Процесс: ${prefs.process.ifBlank { "не выбран" }}\n📅 Даты: ${if (dates.isEmpty()) "нет" else dates.joinToString(", ")}"
+            }
+            override fun onScreenshot(replyToChatId: String) {
+                ScreenshotHelper.takeScreenshot(
+                    service = this@OzonHireAutomationService,
+                    onSuccess = { bytes ->
+                        val ts = SimpleDateFormat("dd.MM HH:mm:ss", Locale.getDefault()).format(java.util.Date())
+                        TelegramBot.sendPhoto(replyToChatId, bytes, "📸 ${prefs.deviceLabel} [${prefs.deviceId}] — $ts")
+                    },
+                    onError = { error ->
+                        TelegramBot.sendTo(replyToChatId, "❌ $error")
+                    }
+                )
+            }
+            override fun onAddUser(targetChatId: String): String {
+                val current = prefs.whitelist.toMutableSet()
+                if (!current.add(targetChatId)) return "ℹ️ Пользователь $targetChatId уже в списке"
+                prefs.whitelist = current
+                TelegramBot.updateWhitelist(current)
+                return "✅ Добавил пользователя $targetChatId"
+            }
+            override fun onRemoveUser(targetChatId: String): String {
+                val current = prefs.whitelist.toMutableSet()
+                if (!current.remove(targetChatId)) return "ℹ️ Пользователя $targetChatId нет в списке"
+                prefs.whitelist = current
+                TelegramBot.updateWhitelist(current)
+                return "🗑 Удалил пользователя $targetChatId"
+            }
+            override fun onListUsers(): String {
+                val users = prefs.whitelist
+                return if (users.isEmpty()) "📭 Whitelist пуст"
+                else "👥 Пользователи (${users.size}):\n${users.joinToString("\n") { "• $it" }}"
             }
         })
         TelegramBot.startPollingCommands()
