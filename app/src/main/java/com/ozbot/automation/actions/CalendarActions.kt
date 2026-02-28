@@ -83,7 +83,10 @@ class CalendarActions(
                     }
 
                     if (container != null && gestureHelper.tryClickNode(container)) {
-                        logger.d("✅ Clicked day $day")
+                        val month = (currentMonth ?: java.util.Calendar.getInstance().get(java.util.Calendar.MONTH)) + 1
+                        val selectedDate = String.format(java.util.Locale.US, "%02d.%02d", day, month)
+                        stateManager.lastSelectedBookingDate = selectedDate
+                        logger.d("✅ Clicked day $day ($selectedDate)")
 
                         handler.postDelayed({
                             val postRoot = findOzonRoot()
@@ -144,64 +147,94 @@ class CalendarActions(
                 when {
                     isPast -> {
                         logger.d("🚫 Skipping PAST date: $day (gray, unclickable)")
-                        return@collectNodes false
+                        false
                     }
                     isToday -> {
-                        logger.d("🔥 Found TODAY: $day (highlighted)")
-                        return@collectNodes true
+                        logger.d("✅ Found TODAY date: $day")
+                        availableDates.add(String.format("%02d.%02d", day, currentCalendarMonth + 1))
+                        true
                     }
                     else -> {
-                        logger.d("✅ Found FUTURE date: $day")
-                        val dateText = "$day.${String.format("%02d", currentCalendarMonth + 1)}"
-                        availableDates.add(dateText)
-                        return@collectNodes true
+                        logger.d("✅ Found future date: $day")
+                        availableDates.add(String.format("%02d.%02d", day, currentCalendarMonth + 1))
+                        true
                     }
                 }
+            } else {
+                false
             }
-
-            true
         }
 
-        return Pair(containers, availableDates)
+        logger.d("Found ${containers.size} clickable available shifts: $availableDates")
+        return containers to availableDates
     }
 
     /**
-     * ✅ НОВЫЙ МЕТОД: Проверяет что дата в прошлом
+     * Проверка: является ли дата прошедшей
      */
     private fun isPastDate(
-        day: Int, month: Int, year: Int,
-        todayDay: Int, todayMonth: Int, todayYear: Int
+        day: Int,
+        month: Int,
+        year: Int,
+        todayDay: Int,
+        todayMonth: Int,
+        todayYear: Int
     ): Boolean {
-        if (year < todayYear) return true
-        if (year > todayYear) return false
-
-        if (month < todayMonth) return true
-        if (month > todayMonth) return false
-
-        return day < todayDay
+        return when {
+            year < todayYear -> true
+            year > todayYear -> false
+            month < todayMonth -> true
+            month > todayMonth -> false
+            day < todayDay -> true
+            else -> false
+        }
     }
 
     private fun extractDayFromContainer(container: AccessibilityNodeInfo): Int? {
-        container.text?.toString()?.trim()?.toIntOrNull()?.let { return it }
+        val dayRegex = Regex("^\\d{1,2}$")
 
-        try {
-            for (i in 0 until container.childCount) {
-                val child = container.getChild(i)
-                try {
-                    child?.text?.toString()?.trim()?.toIntOrNull()?.let { return it }
-                } finally {
-                    NodeTreeHelper.safeRecycle(child)
+        for (i in 0 until container.childCount) {
+            val child = try { container.getChild(i) } catch (_: Exception) { null } ?: continue
+            try {
+                val text = child.text?.toString()?.trim()
+                if (text != null && dayRegex.matches(text)) {
+                    return text.toIntOrNull()
                 }
+            } finally {
+                try { child.recycle() } catch (_: Exception) {}
             }
-        } catch (_: Exception) {}
+        }
+
+        val text = container.text?.toString()?.trim()
+        if (text != null && dayRegex.matches(text)) {
+            return text.toIntOrNull()
+        }
 
         return null
     }
 
     private fun handleMonthNavigation(root: AccessibilityNodeInfo, targetMonths: Set<Int>): Boolean {
-        val currentMonth = getCurrentCalendarMonth(root) ?: return true
+        if (!stateManager.monthClicked.get()) return true
 
-        if (targetMonths.contains(currentMonth)) {
+        val currentMonth = getCurrentCalendarMonth(root)
+        if (currentMonth == null) return false
+
+        stateManager.pendingMonthTarget?.let { pending ->
+            if (currentMonth == pending) {
+                stateManager.pendingMonthTarget = null
+                stateManager.monthClicked.set(false)
+                stateManager.lastMonthText = null
+                return true
+            }
+
+            return false
+        }
+
+        val previousText = stateManager.lastMonthText
+        val currentText = findMonthTextNode(root)?.text?.toString()
+        if (previousText != null && currentText != null && previousText != currentText) {
+            stateManager.monthClicked.set(false)
+            stateManager.lastMonthText = null
             return true
         }
 
@@ -359,13 +392,17 @@ class CalendarActions(
                     val rect = Rect()
                     node.getBoundsInScreen(rect)
 
-                    if (rect.top <= rootRect.height() / 2 &&
-                        rect.left > (rootRect.width() * 0.6).toInt()) {
-                        if (DomUtils.clickNode(node)) return@withNodeTree true
+                    val inTopArea = rect.top in 0..(rootRect.height() / 3)
+                    val onRight = rect.centerX() > rootRect.centerX()
+
+                    if (inTopArea && onRight && node.isClickable) {
+                        if (DomUtils.clickNode(node)) {
+                            return@withNodeTree true
+                        }
                     }
                 }
                 null
-            }
+            }?.let { return true }
 
         } catch (e: Exception) {
             logger.e("findAndClickNextMonthButton error: ${e.message}")

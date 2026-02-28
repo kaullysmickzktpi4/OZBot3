@@ -10,7 +10,11 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.core.app.NotificationCompat
 import com.ozbot.R
-import com.ozbot.actions.*
+import com.ozbot.actions.CalendarActions
+import com.ozbot.actions.FilterActions
+import com.ozbot.actions.ProcessActions
+import com.ozbot.actions.TimePickerActions
+import com.ozbot.actions.WarehouseActions
 import com.ozbot.automation.core.ScreenDetector
 import com.ozbot.automation.core.StateManager
 import com.ozbot.automation.monitoring.FreezeDetector
@@ -171,6 +175,7 @@ class OzonHireAutomationService : AccessibilityService() {
 
         timePickerActions = TimePickerActions(
             prefs = prefs,
+            stateManager = stateManager,
             repo = repo,
             scope = scope,
             logger = logger,
@@ -207,6 +212,8 @@ class OzonHireAutomationService : AccessibilityService() {
     override fun onDestroy() {
         super.onDestroy()
         instance = null
+        TelegramBot.stopPollingCommands()
+        TelegramBot.setCommandHandler(null)
         scope?.cancel()
         scope = null
         handler.removeCallbacksAndMessages(null)
@@ -228,8 +235,6 @@ class OzonHireAutomationService : AccessibilityService() {
             notificationManager.createNotificationChannel(channel)
         }
     }
-
-    // ==================== SPEED PROFILE ====================
 
     private fun initializeSpeedProfile() {
         val profileName = prefs.speedProfile
@@ -256,9 +261,68 @@ class OzonHireAutomationService : AccessibilityService() {
     // ==================== TELEGRAM ====================
 
     private fun initTelegram() {
-        if (prefs.telegramEnabled) {
-            TelegramBot.init(prefs.telegramBotToken, prefs.telegramChatId)
+        if (!prefs.telegramEnabled) {
+            TelegramBot.setCommandHandler(null)
+            TelegramBot.stopPollingCommands()
+            return
         }
+
+        TelegramBot.init(prefs.telegramBotToken, prefs.telegramChatId)
+        TelegramBot.setCommandHandler(object : TelegramBot.CommandHandler {
+            override fun onStartAutomation(): String {
+                return if (isAutomationRunning()) {
+                    "⚠️ Автоматизация уже запущена"
+                } else {
+                    startAutomation()
+                    "▶️ Запускаю автоматизацию"
+                }
+            }
+
+            override fun onStopAutomation(): String {
+                return if (!isAutomationRunning()) {
+                    "ℹ️ Автоматизация уже остановлена"
+                } else {
+                    stopAutomation()
+                    "⏹ Останавливаю автоматизацию"
+                }
+            }
+
+            override fun onAddDate(date: String): String {
+                val current = prefs.targetDates.toMutableSet()
+                if (!current.add(date)) {
+                    return "ℹ️ Дата $date уже есть в поиске"
+                }
+                prefs.targetDates = current.sortedByDate()
+                return "✅ Добавил дату $date в поиск"
+            }
+
+            override fun onRemoveDate(date: String): String {
+                val current = prefs.targetDates.toMutableSet()
+                if (!current.remove(date)) {
+                    return "ℹ️ Даты $date нет в списке"
+                }
+                prefs.targetDates = current.sortedByDate()
+                return "🗑 Удалил дату $date"
+            }
+
+            override fun onListDates(): String {
+                val dates = prefs.targetDates.sortedByDate()
+                return if (dates.isEmpty()) "📭 Список дат пуст" else "📅 Даты поиска: ${dates.joinToString(", ")}"
+            }
+
+            override fun onStatus(): String {
+                val running = if (isAutomationRunning()) "🟢 работает" else "🔴 остановлен"
+                val dates = prefs.targetDates.sortedByDate()
+                val datesStr = if (dates.isEmpty()) "нет" else dates.joinToString(", ")
+                return """
+🤖 Статус: $running
+🏭 Склад: ${prefs.warehouse.ifBlank { "не выбран" }}
+📋 Процесс: ${prefs.process.ifBlank { "не выбран" }}
+📅 Даты: $datesStr
+                """.trimIndent()
+            }
+        })
+        TelegramBot.startPollingCommands()
     }
 
     // ==================== POPUPS ====================
@@ -459,6 +523,18 @@ class OzonHireAutomationService : AccessibilityService() {
             val isCalendarOrTime = screenDetector.isCalendarScreen(root) ||
                     screenDetector.isTimePickerModal(root)
 
+            if (stateManager.forceGoToWarehousesOnStart &&
+                !screenDetector.isWarehouseScreen(root) &&
+                !isCalendarOrTime &&
+                !screenDetector.isFilterModalOpen(root)
+            ) {
+                logger.d("🚚 [START NAV] Принудительный переход в вкладку Склады")
+                navigationHelper.clickWarehousesTab(root)
+                gestureHelper.updateLastClickTime()
+                stateManager.lastStepTime = now
+                return true
+            }
+
             if (!isCalendarOrTime && (now - stateManager.lastClickTime < gestureHelper.currentClickCooldownMs())) {
                 return false
             }
@@ -562,6 +638,7 @@ class OzonHireAutomationService : AccessibilityService() {
 
     private fun handleWarehouseScreen(root: AccessibilityNodeInfo, now: Long) {
         val profile = getEffectiveProfile()
+        stateManager.forceGoToWarehousesOnStart = false
 
         if (screenDetector.isFilterModalOpen(root)) {
             logger.d("🎛️ [FILTER in WAREHOUSE] Working with filter modal...")
@@ -613,6 +690,7 @@ class OzonHireAutomationService : AccessibilityService() {
         initTelegram()
 
         stateManager.filterConfigured = false
+        stateManager.forceGoToWarehousesOnStart = true
 
         val effective = getEffectiveProfile()
         logger.d("🚀 START | Profile: $currentProfile | Effective: $effective")
@@ -665,10 +743,11 @@ class OzonHireAutomationService : AccessibilityService() {
                         return
                     }
 
-                    logger.d("✅ Ozon loaded, going to warehouses")
+                    logger.d("✅ Ozon loaded, checking warehouse tab")
 
                     if (screenDetector.isWarehouseScreen(root)) {
                         logger.d("Already on warehouse screen")
+                        stateManager.forceGoToWarehousesOnStart = false
                         NodeTreeHelper.safeRecycle(root)
                         startTicker()
                         return
@@ -677,7 +756,7 @@ class OzonHireAutomationService : AccessibilityService() {
                     navigationHelper.clickWarehousesTab(root)
                     NodeTreeHelper.safeRecycle(root)
 
-                    handler.postDelayed({ startTicker() }, 1000L)
+                    handler.postDelayed(this, 700L)
 
                 } catch (e: Exception) {
                     logger.e("Error in waitForOzonAndGoToWarehouses: ${e.message}", e)
@@ -778,6 +857,15 @@ class OzonHireAutomationService : AccessibilityService() {
         } catch (e: Exception) {
             logger.e("forceStopAndRelaunch error: ${e.message}")
             launchOzon()
+        }
+    }
+
+    private fun Collection<String>.sortedByDate(): List<String> {
+        return this.sortedBy {
+            val parts = it.split(".")
+            val day = parts.getOrNull(0)?.toIntOrNull() ?: 99
+            val month = parts.getOrNull(1)?.toIntOrNull() ?: 99
+            month * 100 + day
         }
     }
 

@@ -24,5 +24,3 @@ data class AutomationDelays(
     val beforeRetry: Long = 2000,
     val afterMonthSwitch: Long = 1000
 )
-
-// УДАЛИТЕ КЛАСС TimeSlot ОТСЮДА - он теперь в отдельном файле TimeSlot.kt

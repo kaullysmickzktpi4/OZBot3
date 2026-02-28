@@ -4,6 +4,7 @@ import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityNodeInfo
+import com.ozbot.automation.core.StateManager
 import com.ozbot.automation.utils.Logger
 import com.ozbot.automation.utils.NodeTreeHelper
 import com.ozbot.bot.DomUtils
@@ -17,6 +18,7 @@ import kotlinx.coroutines.launch
 
 class TimePickerActions(
     private val prefs: UserPreferences,
+    private val stateManager: StateManager,
     private val repo: BookingRepository,
     private val scope: CoroutineScope?,
     private val logger: Logger,
@@ -104,7 +106,7 @@ class TimePickerActions(
             clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)
 
             val process = prefs.process
-            val date = prefs.targetDates.firstOrNull() ?: "Unknown"
+            val date = stateManager.lastSelectedBookingDate ?: prefs.targetDates.firstOrNull() ?: "Unknown"
             val time = prefs.timeSlots.firstOrNull()?.toDisplayString() ?: "Unknown"
 
             TelegramBot.sendBookingSuccess(process, date, time)

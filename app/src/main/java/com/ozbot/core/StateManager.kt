@@ -22,6 +22,8 @@ class StateManager {
     @Volatile var lastPopupDismissTime = 0L
     @Volatile var filterConfigured = false
     @Volatile var automationStartTime = 0L
+    @Volatile var forceGoToWarehousesOnStart = false
+    @Volatile var lastSelectedBookingDate: String? = null
 
     // Счётчики для автоматической скорости
     val consecSuccessGestures = AtomicInteger(0)
@@ -63,6 +65,8 @@ class StateManager {
         domStableCount = 0
         lastPopupDismissTime = 0L
         filterConfigured = false
+        forceGoToWarehousesOnStart = false
+        lastSelectedBookingDate = null
     }
 
     fun resetForStart() {

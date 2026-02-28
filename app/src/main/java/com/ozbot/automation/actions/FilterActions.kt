@@ -9,10 +9,10 @@ import com.ozbot.automation.core.ScreenDetector
 import com.ozbot.automation.core.StateManager
 import com.ozbot.automation.utils.Logger
 import com.ozbot.automation.utils.NodeTreeHelper
+import com.ozbot.automation.utils.SpeedProfile
 import com.ozbot.bot.DomUtils
 import com.ozbot.navigation.GestureHelper
 import com.ozbot.navigation.NavigationHelper
-import com.ozbot.automation.utils.SpeedProfile
 
 class FilterActions(
     private val service: AccessibilityService,
@@ -33,8 +33,6 @@ class FilterActions(
 
             if (!screenDetector.isFilterModalOpen(root)) {
                 logger.d("Filter modal not open, opening...")
-
-                debugToolbarElements(root)
 
                 if (clickWarehouseFilterButton(root)) {
                     logger.d("✅ Filter button clicked, waiting for modal...")
@@ -122,7 +120,6 @@ class FilterActions(
 
             // Ищем "Карта" которая в BOTTOM NAV (нижние 20% экрана)
             val bottomNavThreshold = screenHeight * 0.8f
-            var mapInBottomNav: AccessibilityNodeInfo? = null
             var mapRect = Rect()
 
             for (mapNode in mapNodes) {
@@ -133,7 +130,6 @@ class FilterActions(
 
                 if (rect.top > bottomNavThreshold) {
                     logger.d("  ↳ ✅ This 'Карта' is in bottom navigation!")
-                    mapInBottomNav = mapNode
                     mapRect = rect
                     break
                 } else {
@@ -141,8 +137,8 @@ class FilterActions(
                 }
             }
 
-            if (mapInBottomNav == null) {
-                logger.w("❌ 'арта' not found in bottom navigation")
+            if (mapRect.isEmpty) {
+                logger.w("❌ 'Карта' not found in bottom navigation")
                 return false
             }
 
@@ -158,17 +154,9 @@ class FilterActions(
                     try {
                         node.getBoundsInScreen(nodeRect)
 
-                        // Условия:
-                        // 1. В bottom navigation (Y > 80% экрана)
                         val isInBottomNav = nodeRect.top > bottomNavThreshold
-
-                        // 2. На той же высоте что и "Карта"
                         val isSameRow = kotlin.math.abs(nodeRect.centerY() - mapRect.centerY()) < 80
-
-                        // 3. СПРАВА от "Карта"
                         val isRightOfMap = nodeRect.left > mapRect.right - 20
-
-                        // 4. НЕ сама кнопка "Карта"
                         val isNotMapItself = nodeRect != mapRect
 
                         if (isInBottomNav && isSameRow && isRightOfMap && isNotMapItself) {
@@ -185,12 +173,13 @@ class FilterActions(
                 null
             }
 
-            if (filterButton != null) {
+            val selectedFilterButton = filterButton
+            if (selectedFilterButton != null) {
                 val filterRect = Rect()
-                filterButton!!.getBoundsInScreen(filterRect)
+                selectedFilterButton.getBoundsInScreen(filterRect)
                 logger.d("✅ Clicking filter button at: $filterRect")
 
-                if (gestureHelper.tryClickNode(filterButton!!)) {
+                if (gestureHelper.tryClickNode(selectedFilterButton)) {
                     logger.d("✅ Filter button clicked!")
 
                     // Проверяем что фильтр открылся
@@ -214,7 +203,6 @@ class FilterActions(
 
             // Пропускаем фильтр
             stateManager.filterConfigured = true
-
             return false
 
         } catch (e: Exception) {
@@ -223,7 +211,6 @@ class FilterActions(
             return false
         }
     }
-
 
     private fun getFilterOpenWaitMs(): Long {
         return when (getCurrentProfile()) {
@@ -246,46 +233,6 @@ class FilterActions(
             SpeedProfile.FAST -> 700L
             SpeedProfile.NORMAL -> 1100L
             SpeedProfile.SLOW -> 1500L
-        }
-    }
-    private fun debugToolbarElements(root: AccessibilityNodeInfo) {
-        try {
-            val displayMetrics = service.resources.displayMetrics
-            val screenHeight = displayMetrics.heightPixels
-            val toolbarThreshold = screenHeight * 0.3f
-
-            logger.d("🔍 DEBUG: All clickable elements in toolbar (Y < $toolbarThreshold):")
-
-            var count = 0
-            NodeTreeHelper.withNodeTree(root, maxDepth = 15) { node ->
-                if (node.isClickable) {
-                    val rect = Rect()
-                    try {
-                        node.getBoundsInScreen(rect)
-
-                        if (rect.top < toolbarThreshold) {
-                            val text = node.text?.toString() ?: ""
-                            val desc = node.contentDescription?.toString() ?: ""
-                            val id = node.viewIdResourceName ?: ""
-                            val className = node.className?.toString() ?: ""
-
-                            logger.d("  [$count] bounds=$rect")
-                            if (text.isNotBlank()) logger.d("      text='$text'")
-                            if (desc.isNotBlank()) logger.d("      desc='$desc'")
-                            if (id.isNotBlank()) logger.d("      id='$id'")
-                            logger.d("      class=$className")
-
-                            count++
-                        }
-                    } catch (_: Exception) {}
-                }
-                null
-            }
-
-            logger.d("Total toolbar clickables: $count")
-
-        } catch (e: Exception) {
-            logger.e("debugToolbarElements error: ${e.message}")
         }
     }
 
@@ -392,23 +339,15 @@ class FilterActions(
 
                 if ((className.contains("Button", ignoreCase = true) ||
                             className.contains("TextView", ignoreCase = true)) &&
-                    node.isClickable) {
-
+                    node.isClickable
+                ) {
                     val rect = Rect()
                     try {
                         node.getBoundsInScreen(rect)
 
-                        // Условия для кнопки "Применить":
-                        // 1. В нижней половине экрана
                         val isBottomHalf = rect.top > screenHeight * 0.5f
-
-                        // 2. НЕ в bottom navigation (которая в самом низу)
                         val notInBottomNav = rect.bottom < screenHeight * 0.95f
-
-                        // 3. Очень широкая (почти на всю ширину)
                         val veryWide = rect.width() > screenWidth * 0.7f
-
-                        // 4. Достаточно высокая
                         val tallEnough = rect.height() > 50 * displayMetrics.density
 
                         if (isBottomHalf && notInBottomNav && veryWide && tallEnough) {
@@ -416,9 +355,9 @@ class FilterActions(
 
                             logger.d("Found large button: bounds=$rect, area=$area")
 
-                            // Берём самую большую и самую нижнюю кнопку
                             if (area > largestButtonArea ||
-                                (area == largestButtonArea && rect.top > largestButtonY)) {
+                                (area == largestButtonArea && rect.top > largestButtonY)
+                            ) {
                                 largestButtonArea = area
                                 largestButtonY = rect.top
                                 largestButton = node
@@ -429,14 +368,15 @@ class FilterActions(
                 null
             }
 
-            if (largestButton != null) {
+            val button = largestButton
+            if (button != null) {
                 val rect = Rect()
-                largestButton!!.getBoundsInScreen(rect)
-                val text = largestButton!!.text?.toString() ?: ""
+                button.getBoundsInScreen(rect)
+                val text = button.text?.toString() ?: ""
 
                 logger.d("✅ Found largest button at bottom: bounds=$rect, text='$text'")
 
-                if (largestButton!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                if (button.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
                     logger.d("✅ Filter applied successfully via large button!")
                     stateManager.filterConfigured = true
 
@@ -462,7 +402,6 @@ class FilterActions(
             if (applyNodes.isNotEmpty()) {
                 logger.d("Found ${applyNodes.size} 'Применить' nodes")
 
-                // Берём самую нижнюю
                 var bottomMost: AccessibilityNodeInfo? = null
                 var maxY = 0
 
@@ -472,7 +411,6 @@ class FilterActions(
 
                     logger.d("'Применить' at: $rect")
 
-                    // Должна быть НЕ в bottom navigation
                     if (rect.bottom < screenHeight * 0.95f && rect.top > maxY) {
                         maxY = rect.top
                         bottomMost = node
@@ -494,7 +432,7 @@ class FilterActions(
                 }
             }
 
-            // СТРАТЕГИЯ 3: Ищем синюю кнопку по цвету (если возможно) или просто кликабельный View внизу
+            // СТРАТЕГИЯ 3: fallback — кликабельный блок внизу
             logger.d("Strategy 3: Looking for any clickable at bottom...")
 
             var bottomClickable: AccessibilityNodeInfo? = null
@@ -520,12 +458,13 @@ class FilterActions(
                 null
             }
 
-            if (bottomClickable != null) {
+            val selectedBottomClickable = bottomClickable
+            if (selectedBottomClickable != null) {
                 val rect = Rect()
-                bottomClickable!!.getBoundsInScreen(rect)
+                selectedBottomClickable.getBoundsInScreen(rect)
                 logger.d("✅ Clicking bottom clickable at: $rect")
 
-                if (bottomClickable!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                if (selectedBottomClickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
                     logger.d("✅ Clicked bottom clickable (likely apply button)!")
                     stateManager.filterConfigured = true
                     return true
@@ -535,7 +474,6 @@ class FilterActions(
             logger.w("❌ No apply button found, using BACK")
             service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
             stateManager.filterConfigured = true
-
             return false
 
         } catch (e: Exception) {
@@ -547,9 +485,14 @@ class FilterActions(
     }
 
     /**
-     * Проверяет есть ли указанный текст рядом с прямоугольником
+     * Проверяет есть ли указанный текст рядом с прямугольником
      */
-    private fun checkIfNearText(root: AccessibilityNodeInfo, rect: Rect, searchText: String, maxDistance: Int): Boolean {
+    private fun checkIfNearText(
+        root: AccessibilityNodeInfo,
+        rect: Rect,
+        searchText: String,
+        maxDistance: Int
+    ): Boolean {
         val nodes = DomUtils.findAllNodesByText(root, searchText)
 
         for (node in nodes) {
