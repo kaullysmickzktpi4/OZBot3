@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- state_checked можно оставить, но основной вид — рамка -->
+    <item android:state_checked="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#2E7D32"/> <!-- чуть темнее зелёного, если нужно -->
+            <corners android:radius="6dp"/>
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#162b16"/> <!-- очень тёмно-зелёный/приглушённый фон -->
+            <stroke android:width="2dp" android:color="#4CAF50"/> <!-- мягкий зелёный бордер -->
+            <corners android:radius="6dp"/>
+        </shape>
+    </item>
+</selector>

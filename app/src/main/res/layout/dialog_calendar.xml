@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="300dp"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/floating_bg"
+    android:padding="16dp">
+
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="12dp">
+
+        <Button
+            android:id="@+id/btnPrev"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@android:color/transparent"
+            android:drawableStart="@drawable/ic_chevron_left"
+            android:gravity="center"
+            android:padding="8dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:contentDescription="Предыдущий месяц" />
+
+        <TextView
+            android:id="@+id/tvMonthTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="Январь 2026"
+            android:textColor="#FFFFFF"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnNext"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@android:color/transparent"
+            android:drawableStart="@drawable/ic_chevron_right"
+            android:gravity="center"
+            android:padding="8dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:contentDescription="Следующий месяц" />
+
+    </LinearLayout>
+
+    <!-- Сетка календаря -->
+    <GridLayout
+        android:id="@+id/gridDays"
+        android:layout_width="match_parent"
+        android:layout_height="276dp"
+        android:columnCount="7"
+        android:layout_marginBottom="10dp" />
+
+    <!-- Кнопки -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnCancel"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:text="ОТМЕНА"
+            android:textColor="#FFFFFF"
+            android:background="@drawable/button_secondary_bg"
+            android:layout_marginEnd="6dp"
+            android:textAllCaps="false"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/btnOk"
+            android:layout_width="0dp"
+            android:layout_height="40dp"
+            android:layout_weight="1"
+            android:text="OK"
+            android:textColor="#FFFFFF"
+            android:background="@drawable/button_start_bg"
+            android:textAllCaps="false"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+</LinearLayout>

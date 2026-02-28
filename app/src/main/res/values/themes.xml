@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.OZBot" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#4CAF50</item>
+        <item name="colorPrimaryVariant">#388E3C</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">#4CAF50</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+    </style>
+
+    <!-- Стили для Spinner -->
+    <style name="SpinnerStyle">
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textSize">13sp</item>
+    </style>
+
+    <style name="SpinnerDropDownItem" parent="@android:style/Widget.Material.DropDownItem.Spinner">
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:background">#2A2A2A</item>
+        <item name="android:padding">10dp</item>
+    </style>
+
+    <!-- Стили для Calendar -->
+    <style name="CalendarHeaderText" parent="TextAppearance.AppCompat.Widget.ActionBar.Title">
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textSize">16sp</item>
+    </style>
+
+    <style name="CalendarDateText" parent="TextAppearance.AppCompat.Body1">
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <style name="CalendarWeekText" parent="TextAppearance.AppCompat.Caption">
+        <item name="android:textColor">#AAAAAA</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+</resources>

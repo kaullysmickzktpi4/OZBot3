@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="statsContainer" type="id"/>
+    <item name="mainContent" type="id"/>
+    <item name="floatingWindowRoot" type="id"/>
+</resources>

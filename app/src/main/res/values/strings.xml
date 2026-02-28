@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">OZBot</string>
+    <string name="accessibility_service_description">
+        OZBot автоматизирует запись на смены в приложении Ozon Hire.
+        Сервис анализирует интерфейс приложения и выполняет действия от вашего имени.
+    </string>
+</resources>
