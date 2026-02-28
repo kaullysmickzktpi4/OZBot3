@@ -2,6 +2,7 @@ package com.ozbot.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Build
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.ozbot.automation.config.TimeSlot
@@ -27,24 +28,50 @@ class UserPreferences(context: Context) {
         private const val KEY_AUTO_START = "auto_start"
         private const val KEY_SPEED_PROFILE = "speed_profile"
 
-        // Telegram keys (личные уведомления)
+        // Telegram (личные уведомления)
         private const val KEY_TG_BOT_TOKEN = "telegram_bot_token"
-        private const val KEY_TG_CHAT_ID = "telegram_chat_id"
+        private const val KEY_TG_CHAT_ID = "telegram_chat_id"       // оставлено для совместимости
         private const val KEY_TG_ENABLED = "telegram_enabled"
         private const val KEY_TG_REPORT_INTERVAL = "telegram_report_interval"
 
-        // ✅ НОВЫЕ: Telegram для друзей
+        // Telegram — управление (admin + whitelist)
+        private const val KEY_ADMIN_CHAT_ID = "admin_chat_id"
+        private const val KEY_WHITELIST = "tg_whitelist"
+
+        // Device identity
+        private const val KEY_DEVICE_ID = "device_id"
+        private const val KEY_DEVICE_LABEL = "device_label"
+
+        // Telegram для друзей
         private const val KEY_FRIENDS_NOTIFY_ENABLED = "friends_notify_enabled"
         private const val KEY_FRIENDS_TG_BOT_TOKEN = "friends_telegram_bot_token"
         private const val KEY_FRIENDS_TG_CHAT_ID = "friends_telegram_chat_id"
     }
 
-    // Склад
+    // ==================== DEVICE IDENTITY ====================
+
+    /** Уникальный ID устройства — генерируется один раз и сохраняется навсегда */
+    val deviceId: String
+        get() {
+            var id = prefs.getString(KEY_DEVICE_ID, "") ?: ""
+            if (id.isBlank()) {
+                id = java.util.UUID.randomUUID().toString().take(8).uppercase()
+                prefs.edit().putString(KEY_DEVICE_ID, id).apply()
+            }
+            return id
+        }
+
+    /** Человекочитаемое имя устройства, редактируется пользователем */
+    var deviceLabel: String
+        get() = prefs.getString(KEY_DEVICE_LABEL, Build.MODEL) ?: Build.MODEL
+        set(value) = prefs.edit().putString(KEY_DEVICE_LABEL, value).apply()
+
+    // ==================== ОСНОВНЫЕ НАСТРОЙКИ ====================
+
     var warehouse: String
         get() = prefs.getString(KEY_WAREHOUSE, "") ?: ""
         set(value) = prefs.edit().putString(KEY_WAREHOUSE, value).apply()
 
-    // Скорость
     var speedProfile: String
         get() {
             val raw = prefs.getString(KEY_SPEED_PROFILE, "NORMAL") ?: "NORMAL"
@@ -56,12 +83,10 @@ class UserPreferences(context: Context) {
         }
         set(value) = prefs.edit().putString(KEY_SPEED_PROFILE, value).apply()
 
-    // Процесс
     var process: String
         get() = prefs.getString(KEY_PROCESS, "") ?: ""
         set(value) = prefs.edit().putString(KEY_PROCESS, value).apply()
 
-    // Даты для записи
     var targetDates: List<String>
         get() {
             val json = prefs.getString(KEY_TARGET_DATES, "[]") ?: "[]"
@@ -69,11 +94,9 @@ class UserPreferences(context: Context) {
             return gson.fromJson(json, type)
         }
         set(value) {
-            val json = gson.toJson(value)
-            prefs.edit().putString(KEY_TARGET_DATES, json).apply()
+            prefs.edit().putString(KEY_TARGET_DATES, gson.toJson(value)).apply()
         }
 
-    // Временные слоты
     var timeSlots: List<TimeSlot>
         get() {
             val json = prefs.getString(KEY_TIME_SLOTS, "[]") ?: "[]"
@@ -81,44 +104,39 @@ class UserPreferences(context: Context) {
             return gson.fromJson(json, type)
         }
         set(value) {
-            val json = gson.toJson(value)
-            prefs.edit().putString(KEY_TIME_SLOTS, json).apply()
+            prefs.edit().putString(KEY_TIME_SLOTS, gson.toJson(value)).apply()
         }
 
-    // Разрешить очередь
     var allowQueue: Boolean
         get() = prefs.getBoolean(KEY_ALLOW_QUEUE, true)
         set(value) = prefs.edit().putBoolean(KEY_ALLOW_QUEUE, value).apply()
 
-    // Минимальная задержка
     var delayMin: Int
         get() = prefs.getInt(KEY_DELAY_MIN, 1000)
         set(value) = prefs.edit().putInt(KEY_DELAY_MIN, value).apply()
 
-    // Максимальная задержка
     var delayMax: Int
         get() = prefs.getInt(KEY_DELAY_MAX, 3000)
         set(value) = prefs.edit().putInt(KEY_DELAY_MAX, value).apply()
 
-    // Флаг первичной настройки
     var isConfigured: Boolean
         get() = prefs.getBoolean(KEY_IS_CONFIGURED, false)
         set(value) = prefs.edit().putBoolean(KEY_IS_CONFIGURED, value).apply()
 
-    // Автозапуск при запуске приложения
     var autoStart: Boolean
         get() = prefs.getBoolean(KEY_AUTO_START, false)
         set(value) = prefs.edit().putBoolean(KEY_AUTO_START, value).apply()
 
-    // ==================== TELEGRAM (личные) ====================
+    // ==================== TELEGRAM (личный канал уведомлений) ====================
 
     var telegramBotToken: String
         get() = prefs.getString(KEY_TG_BOT_TOKEN, "") ?: ""
         set(value) = prefs.edit().putString(KEY_TG_BOT_TOKEN, value).apply()
 
+    /** Оставлено для совместимости с FloatingWindowService */
     var telegramChatId: String
-        get() = prefs.getString(KEY_TG_CHAT_ID, "") ?: ""
-        set(value) = prefs.edit().putString(KEY_TG_CHAT_ID, value).apply()
+        get() = adminChatId
+        set(value) { adminChatId = value }
 
     var telegramEnabled: Boolean
         get() = prefs.getBoolean(KEY_TG_ENABLED, false)
@@ -127,6 +145,24 @@ class UserPreferences(context: Context) {
     var telegramReportIntervalMin: Int
         get() = prefs.getInt(KEY_TG_REPORT_INTERVAL, 30)
         set(value) = prefs.edit().putInt(KEY_TG_REPORT_INTERVAL, value).apply()
+
+    // ==================== TELEGRAM (admin + whitelist) ====================
+
+    /** Chat ID администратора — получает все уведомления и имеет полный доступ */
+    var adminChatId: String
+        get() = prefs.getString(KEY_ADMIN_CHAT_ID, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_ADMIN_CHAT_ID, value).apply()
+
+    /** Whitelist chatId пользователей которые могут управлять этим устройством */
+    var whitelist: Set<String>
+        get() {
+            val json = prefs.getString(KEY_WHITELIST, "[]") ?: "[]"
+            val type = object : TypeToken<List<String>>() {}.type
+            return (gson.fromJson(json, type) as List<String>).toSet()
+        }
+        set(value) {
+            prefs.edit().putString(KEY_WHITELIST, gson.toJson(value.toList())).apply()
+        }
 
     // ==================== TELEGRAM (для друзей) ====================
 
@@ -142,9 +178,6 @@ class UserPreferences(context: Context) {
         get() = prefs.getString(KEY_FRIENDS_TG_CHAT_ID, "") ?: ""
         set(value) = prefs.edit().putString(KEY_FRIENDS_TG_CHAT_ID, value).apply()
 
-    /**
-     * Проверка валидности настроек
-     */
     fun isValid(): Boolean {
         return warehouse.isNotBlank() &&
                 process.isNotBlank() &&
@@ -152,9 +185,6 @@ class UserPreferences(context: Context) {
                 timeSlots.isNotEmpty()
     }
 
-    /**
-     * Очистка всех настроек
-     */
     fun clear() {
         prefs.edit().clear().apply()
     }

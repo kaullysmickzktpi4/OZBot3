@@ -336,7 +336,7 @@ class OzonHireAutomationService : AccessibilityService() {
             override fun onListUsers(): String {
                 val users = prefs.whitelist
                 return if (users.isEmpty()) "📭 Whitelist пуст"
-                else "👥 Пользователи (${users.size}):\n${users.joinToString("\n") { "• $it" }}"
+                else "👥 Пользователи (${users.size}):\n" + users.joinToString("\n") { u -> "• $u" }
             }
         })
         TelegramBot.startPollingCommands()
@@ -346,7 +346,7 @@ class OzonHireAutomationService : AccessibilityService() {
 
     private fun checkAndDismissPopups(root: AccessibilityNodeInfo): Boolean {
         val now = System.currentTimeMillis()
-        if (now - stateManager.lastPopupDismissTime < StateManager.POPUP_DISMISS_COOLDOWN) {
+        if (now - stateManager.lastPopupDismissTime < 500L) {
             return false
         }
 
