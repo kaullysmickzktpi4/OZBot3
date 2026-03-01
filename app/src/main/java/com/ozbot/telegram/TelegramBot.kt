@@ -31,11 +31,9 @@ object TelegramBot {
 
     private const val TAG = "TelegramBot"
 
-    // ==================== ЗАШИТЫЕ ДАННЫЕ ====================
     private const val HARDCODED_TOKEN = "8505350967:AAEKGLeBM3i-svRANRy2LzX_3ooP99fQYVA"
     private const val HARDCODED_ADMIN = "338039305"
 
-    // ==================== СОСТОЯНИЕ ====================
     @Volatile private var botToken: String = HARDCODED_TOKEN
     @Volatile private var adminChatId: String = HARDCODED_ADMIN
     @Volatile private var deviceId: String = ""
@@ -50,7 +48,9 @@ object TelegramBot {
         .readTimeout(40, TimeUnit.SECONDS)
         .build()
 
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    // ✅ FIX: scope теперь пересоздаётся при init, shutdown() его отменяет
+    private var scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
     private val dateFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 
     @Volatile private var lastSendTime = 0L
@@ -67,7 +67,6 @@ object TelegramBot {
         devLabel: String,
         wl: Set<String>
     ) {
-        // Токен и admin всегда берём зашитые — игнорируем переданные
         botToken = HARDCODED_TOKEN
         adminChatId = HARDCODED_ADMIN
         deviceId = devId
@@ -75,7 +74,13 @@ object TelegramBot {
         whitelist = wl.toMutableSet()
         enabled = true
         updateOffset = 0L
-        Log.d(TAG, "TelegramBot initialized. device=$deviceLabel[$deviceId], admin=$adminChatId, whitelist=${whitelist.size}")
+
+        // ✅ FIX: пересоздаём scope если был отменён
+        if (!scope.isActive) {
+            scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        }
+
+        Log.d(TAG, "TelegramBot initialized. device=$deviceLabel[$deviceId]")
     }
 
     fun isEnabled(): Boolean = enabled
@@ -133,17 +138,6 @@ object TelegramBot {
         }
     }
 
-    fun sendDeviceOnline() {
-        send("""
-🟢 <b>Устройство подключено</b>
-📱 $deviceLabel
-🆔 DeviceID: <code>$deviceId</code>
-⏰ ${dateFormat.format(java.util.Date())}
-
-Используй <code>/setlabel ИМЯ</code> чтобы задать имя
-    """.trimIndent())
-    }
-
     fun sendPhoto(targetChatId: String, photoBytes: ByteArray, caption: String = "") {
         if (targetChatId.isBlank()) return
         scope.launch {
@@ -155,15 +149,16 @@ object TelegramBot {
         }
     }
 
-    fun sendToFriendsChat(friendsBotToken: String, friendsChatId: String, message: String) {
-        if (friendsBotToken.isBlank() || friendsChatId.isBlank()) return
-        scope.launch {
-            try {
-                sendTelegramText(friendsBotToken, friendsChatId, message)
-            } catch (e: Exception) {
-                Log.e(TAG, "sendToFriendsChat error: ${e.message}")
-            }
-        }
+    // ==================== УВЕДОМЛЕНИЯ ====================
+
+    fun sendBookingSuccess(process: String, date: String, time: String) {
+        send("""
+✅ <b>СМЕНА ЗАБРОНИРОВАНА!</b>
+📱 $deviceLabel [<code>$deviceId</code>]
+📋 Процесс: $process
+📅 Дата: $date
+🕐 Время: $time
+        """.trimIndent())
     }
 
     // ==================== HTTP ====================
@@ -344,12 +339,10 @@ ${tag}📘 <b>Команды OZBot</b>
                 if (newLabel.isBlank()) { sendTo(senderChatId, "❌ Укажите имя: /setlabel Телефон_Вани"); return }
                 sendTo(senderChatId, tag + handler.onSetLabel(newLabel))
             }
-
-            text == "/myid" || text == "/deviceinfo" -> {
+            text == "/myid" || text == "/deviceinfo" ->
                 sendTo(senderChatId, tag + handler.onGetDeviceInfo())
-            }
-
-            else -> sendTo(senderChatId, "❓ Неизвестная команда. Напиши /help")
+            else ->
+                sendTo(senderChatId, "❓ Неизвестная команда. Напиши /help")
         }
     }
 
@@ -371,136 +364,14 @@ ${tag}📘 <b>Команды OZBot</b>
         return null
     }
 
-    // ==================== УВЕДОМЛЕНИЯ ====================
+    // ==================== SHUTDOWN ====================
 
-    fun sendBotStarted(profile: String) {
-        send("🚀 <b>OZ Bot запущен</b>\n📱 $deviceLabel [<code>$deviceId</code>]\n⚡ Профиль: <code>$profile</code>\n🕐 ${dateFormat.format(Date())}")
-    }
-
-    fun sendBotStopped(totalRestarts: Int, runtime: String) {
-        send("🛑 <b>OZ Bot остановлен</b>\n📱 $deviceLabel [<code>$deviceId</code>]\n⏱ Работал: $runtime\n🔄 Перезапусков: $totalRestarts")
-    }
-
-    fun sendBookingSuccess(process: String, date: String, time: String) {
-        send("""
-✅ <b>СМЕНА ЗАБРОНИРОВАНА!</b>
-📱 $deviceLabel [<code>$deviceId</code>]
-📋 Процесс: $process
-📅 Дата: $date
-🕐 Время: $time
-        """.trimIndent())
-    }
-
-    fun sendStatusReport(
-        ramUsedMb: Long, ramMaxMb: Long, profile: String,
-        tickCount: Long, restartCount: Int, uptime: String
-    ) {
-        val ramPercent = if (ramMaxMb > 0) (ramUsedMb * 100 / ramMaxMb) else 0
-        val ramBar = buildProgressBar(ramPercent.toInt(), 10)
-        send("""
-📊 <b>Статус OZ Bot</b>
-📱 $deviceLabel [<code>$deviceId</code>]
-
-💾 RAM: ${ramUsedMb}MB / ${ramMaxMb}MB
-$ramBar $ramPercent%
-⚡ Скорость: <code>$profile</code>
-🔄 Тики: $tickCount | ♻️ Рестарты: $restartCount
-⏱ Аптайм: $uptime
-        """.trimIndent(), silent = true)
-    }
-
-    fun sendFreezeAlert(frozenSeconds: Long, restartNumber: Int) {
-        send("🥶 <b>FREEZE DETECTED!</b>\n📱 $deviceLabel [<code>$deviceId</code>]\n⏱ UI не менялся: ${frozenSeconds}s\n🔄 Перезапуск #$restartNumber")
-    }
-
-    fun sendRestartComplete() {
-        send("✅ Перезапущено, продолжаю работу\n📱 $deviceLabel [<code>$deviceId</code>]", silent = true)
-    }
-
-    fun sendError(error: String) {
-        send("❌ <b>Ошибка</b>\n📱 $deviceLabel [<code>$deviceId</code>]\n<code>$error</code>")
-    }
-
-    fun sendMemoryWarning(usedMb: Long, maxMb: Long) {
-        val percent = if (maxMb > 0) (usedMb * 100 / maxMb) else 0
-        send("⚠️ <b>Высокое потребление RAM!</b>\n📱 $deviceLabel [<code>$deviceId</code>]\n💾 ${usedMb}MB / ${maxMb}MB ($percent%)")
-    }
-
-    fun sendTestMessage(): Boolean {
-        send("✅ OZ Bot подключен!\n📱 $deviceLabel [<code>$deviceId</code>]")
-        return true
-    }
-
-    // Отправить сообщение с inline-кнопками
-    fun sendWithButtons(message: String, buttons: List<List<Pair<String, String>>>) {
-        scope.launch {
-            try {
-                sendTelegramTextWithButtons(botToken, adminChatId, message, buttons)
-            } catch (e: Exception) {
-                Log.e(TAG, "sendWithButtons error: ${e.message}")
-            }
-        }
-    }
-
-    private suspend fun sendTelegramTextWithButtons(
-        token: String,
-        chat: String,
-        text: String,
-        buttons: List<List<Pair<String, String>>> // [[("текст", "callback_data"), ...], ...]
-    ) {
-        val url = "https://api.telegram.org/bot$token/sendMessage"
-
-        // Строим inline_keyboard
-        val keyboard = org.json.JSONArray()
-        for (row in buttons) {
-            val jsonRow = org.json.JSONArray()
-            for ((label, data) in row) {
-                jsonRow.put(org.json.JSONObject().apply {
-                    put("text", label)
-                    put("callback_data", data)
-                })
-            }
-            keyboard.put(jsonRow)
-        }
-
-        val replyMarkup = org.json.JSONObject().apply {
-            put("inline_keyboard", keyboard)
-        }
-
-        val json = org.json.JSONObject().apply {
-            put("chat_id", chat)
-            put("text", text)
-            put("parse_mode", "HTML")
-            put("reply_markup", replyMarkup)
-        }
-
-        val body = json.toString().toRequestBody("application/json".toMediaType())
-        val request = Request.Builder().url(url).post(body).build()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                Log.e(TAG, "sendWithButtons error: ${response.code} ${response.body?.string()}")
-            }
-        }
-    }
-
-    // Ответ на нажатие кнопки (убирает часики на кнопке)
-    private suspend fun answerCallbackQuery(callbackQueryId: String) {
-        val url = "https://api.telegram.org/bot$botToken/answerCallbackQuery"
-        val json = org.json.JSONObject().apply {
-            put("callback_query_id", callbackQueryId)
-        }
-        val body = json.toString().toRequestBody("application/json".toMediaType())
-        val request = Request.Builder().url(url).post(body).build()
-        runCatching { client.newCall(request).execute().close() }
-    }
-    private fun buildProgressBar(percent: Int, length: Int): String {
-        val filled = (percent * length / 100).coerceIn(0, length)
-        return "▓".repeat(filled) + "░".repeat(length - filled)
-    }
-
+    // ✅ FIX: правильно закрываем всё
     fun shutdown() {
         stopPollingCommands()
         commandHandler = null
         scope.cancel()
+        client.dispatcher.executorService.shutdown()
+        client.connectionPool.evictAll()
     }
 }

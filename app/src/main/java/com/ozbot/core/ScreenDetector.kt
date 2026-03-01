@@ -66,6 +66,10 @@ class ScreenDetector {
         return true
     }
 
+    fun isWaitingConfirmationScreen(root: AccessibilityNodeInfo): Boolean {
+        return DomUtils.hasText(root, "Ждёт подтверждения")
+    }
+
     // ==================== ЭКРАН КАЛЕНДАРЯ ====================
 
     fun isCalendarScreen(root: AccessibilityNodeInfo): Boolean {

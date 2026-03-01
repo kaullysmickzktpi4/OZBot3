@@ -114,12 +114,10 @@ class OzonHireAutomationService : AccessibilityService() {
         val displayMetrics = resources.displayMetrics
         logger.d("📱 Device: ${displayMetrics.widthPixels}x${displayMetrics.heightPixels}, density=${displayMetrics.density}")
 
-        TelegramBot.sendDeviceOnline()
         initializeComponents()
         createNotificationChannel()
         initializeSpeedProfile()
         initTelegram()
-        shiftMonitor = ShiftMonitor()
 
         shiftScanner = ShiftScanner(
             prefs = prefs,
@@ -168,6 +166,7 @@ class OzonHireAutomationService : AccessibilityService() {
         calendarActions = CalendarActions(
             prefs = prefs,
             stateManager = stateManager,
+            repo = repo,           // ← ДОБАВЛЕНО
             logger = logger,
             gestureHelper = gestureHelper,
             navigationHelper = navigationHelper,
@@ -214,6 +213,7 @@ class OzonHireAutomationService : AccessibilityService() {
     override fun onDestroy() {
         super.onDestroy()
         instance = null
+        timePickerActions.destroy()
         TelegramBot.stopPollingCommands()
         TelegramBot.setCommandHandler(null)
         scope?.cancel()
@@ -758,7 +758,6 @@ class OzonHireAutomationService : AccessibilityService() {
 
         stateManager.isRunning.set(true)
 
-        TelegramBot.sendBotStarted(effective.name)
         launchOzon()
 
         waitForOzonAndGoToWarehouses()
@@ -847,11 +846,6 @@ class OzonHireAutomationService : AccessibilityService() {
     }
 
     fun stopAutomation() {
-        TelegramBot.sendBotStopped(
-            stateManager.restartCount.get(),
-            memoryManager.formatUptime(System.currentTimeMillis() - stateManager.automationStartTime)
-        )
-
         logger.d("🛑 STOP")
         stateManager.isRunning.set(false)
         handler.removeCallbacksAndMessages(null)
@@ -915,7 +909,6 @@ class OzonHireAutomationService : AccessibilityService() {
                 stateManager.freezeDetectedHash = 0
                 stateManager.lastDomHash = 0
                 stateManager.domStableCount = 0
-                TelegramBot.sendRestartComplete()
 
                 handler.postDelayed({
                     val root = findOzonRoot()

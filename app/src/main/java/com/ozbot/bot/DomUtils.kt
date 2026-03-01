@@ -3,7 +3,6 @@ package com.ozbot.bot
 import android.accessibilityservice.AccessibilityService
 import android.graphics.Rect
 import android.os.Build
-import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
 
 object DomUtils {
@@ -12,6 +11,7 @@ object DomUtils {
         return findNodeByText(root, text) != null
     }
 
+    // ✅ FIX #1: recycle child-нод которые не вернули результат
     fun findNodeByText(
         node: AccessibilityNodeInfo,
         text: String
@@ -21,14 +21,21 @@ object DomUtils {
         }
 
         for (i in 0 until node.childCount) {
-            node.getChild(i)?.let { child ->
-                findNodeByText(child, text)?.let { return it }
+            val child = node.getChild(i) ?: continue
+            val found = findNodeByText(child, text)
+            if (found != null) {
+                // child == found или child — предок found, не recycle
+                return found
+            } else {
+                // child не нужен — освобождаем
+                try { child.recycle() } catch (_: Exception) {}
             }
         }
 
         return null
     }
 
+    // ✅ FIX #2: recycle child-нод которые не вернули результат
     fun findNodeByDesc(
         node: AccessibilityNodeInfo,
         desc: String
@@ -38,32 +45,43 @@ object DomUtils {
         }
 
         for (i in 0 until node.childCount) {
-            node.getChild(i)?.let { child ->
-                findNodeByDesc(child, desc)?.let { return it }
+            val child = node.getChild(i) ?: continue
+            val found = findNodeByDesc(child, desc)
+            if (found != null) {
+                return found
+            } else {
+                try { child.recycle() } catch (_: Exception) {}
             }
         }
 
         return null
     }
 
+    // ✅ FIX #3: recycle промежуточные child-ноды (не добавленные в results)
     fun findAllNodesByText(
         node: AccessibilityNodeInfo,
         text: String,
         results: MutableList<AccessibilityNodeInfo> = mutableListOf()
     ): List<AccessibilityNodeInfo> {
-        if (node.text?.toString()?.contains(text, ignoreCase = true) == true) {
+        val matches = node.text?.toString()?.contains(text, ignoreCase = true) == true
+        if (matches) {
             results.add(node)
         }
 
         for (i in 0 until node.childCount) {
-            node.getChild(i)?.let { child ->
-                findAllNodesByText(child, text, results)
+            val child = node.getChild(i) ?: continue
+            val sizeBefore = results.size
+            findAllNodesByText(child, text, results)
+            // Если child сам не попал в results и не добавил ничего нового — recycle
+            if (results.size == sizeBefore && !results.contains(child)) {
+                try { child.recycle() } catch (_: Exception) {}
             }
         }
 
         return results
     }
 
+    // findClickableParent — не вызывает getChild, идёт вверх по .parent, recycle не нужен
     fun findClickableParent(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         if (node.isClickable) return node
 
@@ -75,12 +93,17 @@ object DomUtils {
         return null
     }
 
+    // ✅ FIX #4: recycle child-нод которые не scrollable
     fun findScrollable(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         if (node.isScrollable) return node
 
         for (i in 0 until node.childCount) {
-            node.getChild(i)?.let { child ->
-                findScrollable(child)?.let { return it }
+            val child = node.getChild(i) ?: continue
+            val found = findScrollable(child)
+            if (found != null) {
+                return found
+            } else {
+                try { child.recycle() } catch (_: Exception) {}
             }
         }
 
@@ -107,120 +130,17 @@ object DomUtils {
         val x = (rect.left + rect.right) / 2f
         val y = (rect.top + rect.bottom) / 2f
 
-        // Gesture для клика
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             val path = android.graphics.Path()
             path.moveTo(x, y)
 
             val gesture = android.accessibilityservice.GestureDescription.Builder()
-                .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 50))
+                .addStroke(
+                    android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 50)
+                )
                 .build()
 
             service.dispatchGesture(gesture, null, null)
         }
-    }
-
-    // ---------- Поиск по Regex текста ----------
-    fun findNodeByTextRegex(
-        node: AccessibilityNodeInfo?,
-        regex: Regex
-    ): AccessibilityNodeInfo? {
-        if (node == null) return null
-        if (node.text?.toString()?.let { regex.matches(it) } == true) {
-            return node
-        }
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            findNodeByTextRegex(child, regex)?.let { return it }
-        }
-        return null
-    }
-
-    fun hasResourceId(root: AccessibilityNodeInfo, resourceId: String): Boolean {
-        return try {
-            val nodes = root.findAccessibilityNodeInfosByViewId(resourceId)
-            !nodes.isNullOrEmpty()
-        } catch (e: Exception) {
-            false
-        }
-    }
-
-    // ---------- Gesture-клик: сдвиг вправо для Next, двойной тап и лог ----------
-    fun clickNodeByGesture(service: AccessibilityService, node: AccessibilityNodeInfo, shift: Int = 20) {
-        val rect = Rect()
-        node.getBoundsInScreen(rect)
-
-        // На Next/Prev чаще всего нужно кликать не по центру, а ближе к краю кнопки!
-        val x = (rect.right - shift).coerceAtLeast(rect.left + shift).toFloat()
-        val y = ((rect.top + rect.bottom) / 2f)
-
-        Log.d("DomUtils", "Gesture tap coords: x=$x, y=$y, bounds=$rect")
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            val path = android.graphics.Path()
-            path.moveTo(x, y)
-            val gesture = android.accessibilityservice.GestureDescription.Builder()
-                .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 180))
-                .build()
-
-            service.dispatchGesture(gesture, null, null)
-            Thread.sleep(180)
-            // Делаем повторный клик (иногда только второй срабатывает)
-            service.dispatchGesture(gesture, null, null)
-        }
-    }
-
-    // ---------- Поиск кнопки “следующий месяц” справа от monthNode ----------
-    fun findNextMonthButton(root: AccessibilityNodeInfo, monthNode: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        val monthRect = Rect()
-        monthNode.getBoundsInScreen(monthRect)
-
-        // Сначала среди братьев
-        val parent = try { monthNode.parent } catch (_: Exception) { null }
-        if (parent != null) {
-            for (i in 0 until parent.childCount) {
-                val child = parent.getChild(i) ?: continue
-                if ("android.widget.Button" == child.className?.toString() && child.isClickable) {
-                    val childRect = Rect()
-                    child.getBoundsInScreen(childRect)
-                    if (childRect.left > monthRect.right - 15) {
-                        return child
-                    }
-                }
-            }
-        }
-        // fallback: вглубь
-        for (i in 0 until root.childCount) {
-            val node = root.getChild(i) ?: continue
-            val found = findNextMonthButton(node, monthNode)
-            if (found != null) return found
-        }
-        return null
-    }
-
-    // ---------- Поиск кнопки “предыдущий месяц” слева от monthNode ----------
-    fun findPrevMonthButton(root: AccessibilityNodeInfo, monthNode: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        val monthRect = Rect()
-        monthNode.getBoundsInScreen(monthRect)
-
-        val parent = try { monthNode.parent } catch (_: Exception) { null }
-        if (parent != null) {
-            for (i in 0 until parent.childCount) {
-                val child = parent.getChild(i) ?: continue
-                if ("android.widget.Button" == child.className?.toString() && child.isClickable) {
-                    val childRect = Rect()
-                    child.getBoundsInScreen(childRect)
-                    if (childRect.right < monthRect.left + 15) {
-                        return child
-                    }
-                }
-            }
-        }
-        for (i in 0 until root.childCount) {
-            val node = root.getChild(i) ?: continue
-            val found = findPrevMonthButton(node, monthNode)
-            if (found != null) return found
-        }
-        return null
     }
 }

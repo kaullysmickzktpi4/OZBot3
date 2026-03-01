@@ -244,4 +244,8 @@ class TimePickerActions(
 
         return false
     }
+
+    fun destroy() {
+        handler.removeCallbacksAndMessages(null)
+    }
 }

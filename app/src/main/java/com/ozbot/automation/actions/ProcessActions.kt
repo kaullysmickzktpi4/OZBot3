@@ -10,7 +10,6 @@ import com.ozbot.automation.utils.SpeedProfile
 import com.ozbot.bot.DomUtils
 import com.ozbot.data.UserPreferences
 import com.ozbot.automation.navigation.GestureHelper
-import com.ozbot.automation.navigation.NavigationHelper
 
 class ProcessActions(
     private val prefs: UserPreferences,
@@ -27,37 +26,40 @@ class ProcessActions(
         if (process.isEmpty()) return
 
         if (screenDetector.isNoSlotsScreen(root)) {
-            logger.d("🚫 Процесс в секции 'Нет мест', пропускаем...")
+            logger.d("🚫 No slots screen, skipping...")
             return
         }
 
+        // Ищем сразу без скролла
         val nodes = DomUtils.findAllNodesByText(root, process)
-        if (nodes.isEmpty()) {
-            logger.d("Process '$process' not found, smart scrolling...")
-
-            if (fastScrollDown(root, process)) {
-                logger.d("Process found after scrolling!")
+        if (nodes.isNotEmpty()) {
+            val node = nodes.first()
+            if (!isNodeInNoSlotsSection(root, node)) {
+                logger.d("✅ Clicking process '$process' (found immediately)")
+                clickProcessNode(node)
+                return
             } else {
-                logger.d("Process not found even after scrolling")
-                gestureHelper.updateLastClickTime(200L)
+                logger.d("🚫 Процесс '$process' в секции 'Нет мест'")
+                return
             }
-            return
         }
 
-        val node = nodes.first()
-        if (isNodeInNoSlotsSection(root, node)) {
-            logger.d("🚫 Процесс '$process' сейчас без мест")
-            return
+        // Не нашли — скроллим максимум 2 раза
+        logger.d("Process '$process' not visible, scrolling (max 2x)...")
+        if (fastScrollDown(root, process)) {
+            logger.d("Process found after scrolling!")
+        } else {
+            logger.d("Process '$process' not found after scroll, giving up")
+            gestureHelper.updateLastClickTime(200L)
         }
+    }
 
-        logger.d("✅ Clicking process '$process'")
+    private fun clickProcessNode(node: AccessibilityNodeInfo) {
         val clickable = DomUtils.findClickableParent(node) ?: node
         clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-
         stateManager.waitingForWarehouseLoad.set(true)
         stateManager.lastStepTime = System.currentTimeMillis()
         gestureHelper.updateLastClickTime()
-
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
             stateManager.waitingForWarehouseLoad.set(false)
         }, 400L)
@@ -79,24 +81,17 @@ class ProcessActions(
                 return false
             }
 
-            val maxSwipes = when (getCurrentProfile()) {
-                SpeedProfile.FAST -> 8
-                SpeedProfile.NORMAL -> 6
-                SpeedProfile.SLOW -> 4
-            }
-
-            logger.d("⚡ Smart scrolling (max ${maxSwipes}x) looking for '$targetText'...")
+            // ← УМЕНЬШЕНО: максимум 2 скролла при любом профиле
+            val maxSwipes = 2
 
             for (i in 0 until maxSwipes) {
                 gestureHelper.performFastSwipeUp(rect)
-
                 Thread.sleep(80L)
 
                 val newRoot = findOzonRoot()
                 if (newRoot != null) {
                     val found = DomUtils.findAllNodesByText(newRoot, targetText)
                     NodeTreeHelper.safeRecycle(newRoot)
-
                     if (found.isNotEmpty()) {
                         logger.d("✅ Found '$targetText' after ${i + 1} swipes!")
                         return true
@@ -104,7 +99,7 @@ class ProcessActions(
                 }
             }
 
-            logger.d("⚠️ Scrolled ${maxSwipes}x, '$targetText' not found")
+            logger.d("'$targetText' not found after $maxSwipes swipes")
             return false
 
         } catch (e: Exception) {
