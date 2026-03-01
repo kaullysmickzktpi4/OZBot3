@@ -60,7 +60,7 @@ class ProcessActions(
 
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
             stateManager.waitingForWarehouseLoad.set(false)
-        }, getCurrentProfile().loadWait + 100L)
+        }, 400L)
     }
 
     private fun fastScrollDown(root: AccessibilityNodeInfo, targetText: String): Boolean {

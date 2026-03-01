@@ -41,117 +41,89 @@ class NavigationHelper(
 
     fun clickWarehousesTab(root: AccessibilityNodeInfo): Boolean {
         try {
-            logger.d("🔍 Searching for Warehouses tab...")
-
-            // Способ 1: По ID
-            val nodeById = findWarehouseNodeAnywhere()
-            if (nodeById != null) {
+            // Способ 1: По resource-id
+            val nodes = root.findAccessibilityNodeInfosByViewId("ru.ozon.hire:id/warehouseTab")
+            if (!nodes.isNullOrEmpty()) {
+                val node = nodes.first()
+                if (node.isSelected) {
+                    logger.d("✅ warehouseTab already selected")
+                    return true
+                }
+                if (node.isClickable) {
+                    node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    gestureHelper.updateLastClickTime()
+                    logger.d("✅ Clicked warehouseTab by resource-id")
+                    return true
+                }
                 val rect = Rect()
-                nodeById.getBoundsInScreen(rect)
-                logger.d("Found by ID at bounds: $rect")
-
-                if (gestureHelper.tryClickNode(nodeById)) {
-                    logger.d("✅ Clicked warehouses tab by ID")
+                node.getBoundsInScreen(rect)
+                if (gestureHelper.gestureTap(rect.centerX().toFloat(), rect.centerY().toFloat())) {
+                    logger.d("✅ Tapped warehouseTab by coords")
                     return true
                 }
             }
 
-            // Способ 2: По тексту "Склады"
-            val textNodes = DomUtils.findAllNodesByText(root, "Склады")
-            if (textNodes.isNotEmpty()) {
-                for (textNode in textNodes) {
-                    val rect = Rect()
-                    textNode.getBoundsInScreen(rect)
-                    logger.d("Found text 'Склады' at bounds: $rect")
-
-                    if (rect.bottom > 2000) {
-                        var clickableParent = DomUtils.findClickableParent(textNode)
-                        if (clickableParent == null) {
-                            try {
-                                val parent = textNode.parent
-                                if (parent != null) {
-                                    clickableParent = DomUtils.findClickableParent(parent)
-                                }
-                            } catch (_: Exception) {}
-                        }
-
-                        val targetNode = clickableParent ?: textNode
-                        val targetRect = Rect()
-                        targetNode.getBoundsInScreen(targetRect)
-                        logger.d("Clicking target at bounds: $targetRect")
-
-                        if (gestureHelper.tryClickNode(targetNode)) {
-                            logger.d("✅ Clicked warehouses tab by text")
-                            return true
-                        }
-                    }
-                }
-            }
-
-            // Способ 3: По description
+            // Способ 2: По content-desc
             val nodeByDesc = DomUtils.findNodeByDesc(root, "warehouseTab")
             if (nodeByDesc != null) {
-                val rect = Rect()
-                nodeByDesc.getBoundsInScreen(rect)
-                logger.d("Found by desc at bounds: $rect")
-
                 if (gestureHelper.tryClickNode(nodeByDesc)) {
-                    logger.d("✅ Clicked warehouses tab by desc")
+                    logger.d("✅ Clicked warehouseTab by desc")
                     return true
                 }
             }
 
-            // Способ 4: Хардкод координаты
-            logger.d("Trying hardcoded coordinates...")
-            val centerX = 540f
-            val centerY = 2205f
-
-            if (gestureHelper.gestureTap(centerX, centerY)) {
-                logger.d("✅ Clicked warehouses tab by coordinates")
+            // Способ 3: Хардкод координаты
+            if (gestureHelper.gestureTap(540f, 2205f)) {
+                logger.d("✅ Tapped warehouseTab by hardcoded coords")
                 return true
             }
 
-            logger.w("❌ All methods failed to click warehouses tab")
+            logger.w("❌ clickWarehousesTab: all methods failed")
             return false
 
         } catch (e: Exception) {
-            logger.e("Error clicking warehouses tab: ${e.message}", e)
+            logger.e("clickWarehousesTab error: ${e.message}", e)
             return false
         }
     }
 
     fun goToWarehousesSmart(root: AccessibilityNodeInfo) {
-        if (stateManager.goingToWarehouses.get()) return
-
+        // ✅ Убрана проверка goingToWarehouses — она никогда не сбрасывалась
+        // и блокировала навигацию навсегда
         try {
+            // Способ 1: По resource-id warehouseTab
             val node = findWarehouseNodeAnywhere()
             if (node != null) {
-                gestureHelper.tapNodeBoundsWithCallback(node, getCurrentProfile().warehouseDelay)
+                val rect = Rect()
+                node.getBoundsInScreen(rect)
+                if (rect.width() > 0 && rect.height() > 0) {
+                    gestureHelper.gestureTap(rect.centerX().toFloat(), rect.centerY().toFloat())
+                    stateManager.markNavigation()
+                    gestureHelper.updateLastClickTime()
+                    logger.d("✅ goToWarehousesSmart: tapped warehouseTab by bounds")
+                    return
+                }
+            }
+
+            // Способ 2: clickWarehousesTab
+            if (clickWarehousesTab(root)) {
+                stateManager.markNavigation()
+                logger.d("✅ goToWarehousesSmart: clicked warehouseTab")
                 return
             }
 
-            val nodeByText = DomUtils.findNodeByText(root, "Склады")
-            if (nodeByText != null) {
-                val clickable = DomUtils.findClickableParent(nodeByText) ?: nodeByText
-                clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                gestureHelper.updateLastClickTime()
-                return
-            }
+            // Способ 3: BACK если глубоко в стеке
+            logger.w("goToWarehousesSmart: tabs not found, pressing BACK")
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            gestureHelper.updateLastClickTime()
+            stateManager.markNavigation()
 
-            logger.w("goToWarehousesSmart: no method succeeded")
         } catch (e: Exception) {
             logger.e("goToWarehousesSmart error: ${e.message}")
-            stateManager.goingToWarehouses.set(false)
         }
     }
 
     fun isOnBookingsTab(root: AccessibilityNodeInfo): Boolean {
-        // Проверяем текст "Записи" в нижней панели навигации
-        val hasBookingsText = DomUtils.hasText(root, "Записи")
-
-        if (!hasBookingsText) return false
-
-        // Дополнительная проверка: есть ли характерные элементы вкладки "Записи"
         val hasBookingElements = DomUtils.hasText(root, "Предстоящие") ||
                 DomUtils.hasText(root, "Завершенные") ||
                 DomUtils.hasText(root, "Отмененные") ||

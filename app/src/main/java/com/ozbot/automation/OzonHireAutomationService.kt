@@ -8,8 +8,6 @@ import android.content.Intent
 import android.os.Build
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import androidx.core.app.NotificationCompat
-import com.ozbot.R
 import com.ozbot.automation.actions.CalendarActions
 import com.ozbot.automation.actions.FilterActions
 import com.ozbot.automation.actions.ProcessActions
@@ -88,13 +86,13 @@ class OzonHireAutomationService : AccessibilityService() {
     // Popup keywords
     private val POPUP_KEYWORDS = listOf(
         "Как прошла смена", "Оцените", "Обновление", "Обновить", "Позже",
-        "Пропустить", "Не сейчас", "Закрыть", "Отмена", "Понятно",
+        "Пропустить", "Не сейчас", "Отмена", "Понятно",
         "Хорошо", "OK", "Ок", "Готово", "Продолжить", "Спасибо",
-        "Новая версия", "Оценить", "Напомнить позже", "Нет мест"
+        "Новая версия", "Оценить", "Напомнить позже"
     )
 
     private val DISMISS_BUTTON_TEXTS = listOf(
-        "Закрыть", "Позже", "Пропустить", "Не сейчас", "Отмена",
+        "Позже", "Пропустить", "Не сейчас", "Отмена",
         "Понятно", "OK", "Ок", "Готово", "Нет", "✕", "×", "Напомнить позже"
     )
 
@@ -116,6 +114,7 @@ class OzonHireAutomationService : AccessibilityService() {
         val displayMetrics = resources.displayMetrics
         logger.d("📱 Device: ${displayMetrics.widthPixels}x${displayMetrics.heightPixels}, density=${displayMetrics.density}")
 
+        TelegramBot.sendDeviceOnline()
         initializeComponents()
         createNotificationChannel()
         initializeSpeedProfile()
@@ -262,15 +261,10 @@ class OzonHireAutomationService : AccessibilityService() {
     }
 
     private fun initTelegram() {
-        if (!prefs.telegramEnabled) {
-            TelegramBot.setCommandHandler(null)
-            TelegramBot.stopPollingCommands()
-            return
-        }
-
+        // Telegram всегда включён — токен зашит в коде
         TelegramBot.init(
-            token = prefs.telegramBotToken,
-            admin = prefs.adminChatId,
+            token = "",       // игнорируется — используется зашитый
+            admin = "",       // игнорируется — используется зашитый
             devId = prefs.deviceId,
             devLabel = prefs.deviceLabel,
             wl = prefs.whitelist
@@ -314,9 +308,7 @@ class OzonHireAutomationService : AccessibilityService() {
                         val ts = SimpleDateFormat("dd.MM HH:mm:ss", Locale.getDefault()).format(java.util.Date())
                         TelegramBot.sendPhoto(replyToChatId, bytes, "📸 ${prefs.deviceLabel} [${prefs.deviceId}] — $ts")
                     },
-                    onError = { error ->
-                        TelegramBot.sendTo(replyToChatId, "❌ $error")
-                    }
+                    onError = { error -> TelegramBot.sendTo(replyToChatId, "❌ $error") }
                 )
             }
             override fun onAddUser(targetChatId: String): String {
@@ -325,6 +317,28 @@ class OzonHireAutomationService : AccessibilityService() {
                 prefs.whitelist = current
                 TelegramBot.updateWhitelist(current)
                 return "✅ Добавил пользователя $targetChatId"
+            }
+            override fun onSetLabel(newLabel: String): String {
+                prefs.deviceLabel = newLabel
+                // Обновляем label в TelegramBot без перезапуска
+                TelegramBot.init(
+                    token = "",
+                    admin = "",
+                    devId = prefs.deviceId,
+                    devLabel = newLabel,
+                    wl = prefs.whitelist
+                )
+                return "✅ Имя устройства изменено на: <b>$newLabel</b>\n🆔 ID: <code>${prefs.deviceId}</code>"
+            }
+
+            override fun onGetDeviceInfo(): String {
+                return """
+                📱 <b>Информация об устройстве</b>
+                🆔 DeviceID: <code>${prefs.deviceId}</code>
+                📛 Имя: <b>${prefs.deviceLabel}</b>
+                🤖 Модель: ${android.os.Build.MODEL}
+                📊 Android: ${android.os.Build.VERSION.RELEASE}
+                """.trimIndent()
             }
             override fun onRemoveUser(targetChatId: String): String {
                 val current = prefs.whitelist.toMutableSet()
@@ -338,10 +352,10 @@ class OzonHireAutomationService : AccessibilityService() {
                 return if (users.isEmpty()) "📭 Whitelist пуст"
                 else "👥 Пользователи (${users.size}):\n" + users.joinToString("\n") { u -> "• $u" }
             }
+
         })
         TelegramBot.startPollingCommands()
     }
-
     // ==================== POPUPS ====================
 
     private fun checkAndDismissPopups(root: AccessibilityNodeInfo): Boolean {
@@ -376,16 +390,22 @@ class OzonHireAutomationService : AccessibilityService() {
     }
 
     private fun hasPopupIndicators(root: AccessibilityNodeInfo): Boolean {
-        if (screenDetector.isWarehouseScreen(root) ||
-            screenDetector.isCalendarScreen(root) ||
-            screenDetector.isTimePickerModal(root) ||
-            screenDetector.isProcessListScreen(root) ||
-            screenDetector.isFilterModalOpen(root)) {
+        val isWarehouse = screenDetector.isWarehouseScreen(root)
+        val isCalendar = screenDetector.isCalendarScreen(root)
+        val isTimePicker = screenDetector.isTimePickerModal(root)
+        val isProcess = screenDetector.isProcessListScreen(root)
+        val isFilter = screenDetector.isFilterModalOpen(root)
+        val isNoSlots = screenDetector.isNoSlotsScreen(root)
+
+        if (isWarehouse || isCalendar || isTimePicker || isProcess || isFilter || isNoSlots) {
             return false
         }
 
         for (keyword in POPUP_KEYWORDS) {
-            if (DomUtils.hasText(root, keyword)) return true
+            if (DomUtils.hasText(root, keyword)) {
+                logger.d("🔔 Popup keyword found: '$keyword'")
+                return true
+            }
         }
 
         var hasDialog = false
@@ -487,6 +507,12 @@ class OzonHireAutomationService : AccessibilityService() {
     private fun tickAggressively(): Boolean {
         if (!stateManager.isRunning.get()) return false
 
+        // ✅ Ждём после навигации — не дёргаем UI пока экран грузится
+        if (stateManager.isWaitingAfterNav()) {
+            logger.d("⏳ Waiting after navigation...")
+            return false
+        }
+
         val now = System.currentTimeMillis()
         val profile = getEffectiveProfile()
 
@@ -532,6 +558,7 @@ class OzonHireAutomationService : AccessibilityService() {
             if (screenDetector.isOnBookingsTab(root)) {
                 logger.d("🚫 [BOOKINGS TAB] Ушли в Записи, возвращаемся к складам")
                 navigationHelper.clickWarehousesTab(root)
+                stateManager.markNavigation()
                 gestureHelper.updateLastClickTime()
                 stateManager.lastStepTime = now
                 return true
@@ -547,6 +574,7 @@ class OzonHireAutomationService : AccessibilityService() {
             ) {
                 logger.d("🚚 [START NAV] Принудительный переход в вкладку Склады")
                 navigationHelper.clickWarehousesTab(root)
+                stateManager.markNavigation()
                 gestureHelper.updateLastClickTime()
                 stateManager.lastStepTime = now
                 return true
@@ -620,6 +648,7 @@ class OzonHireAutomationService : AccessibilityService() {
                     if (screenDetector.isOnHomeScreen(root)) {
                         logger.d("On home screen, going to warehouses")
                         navigationHelper.clickWarehousesTab(root)
+                        stateManager.markNavigation()
                         gestureHelper.updateLastClickTime()
                         stateManager.lastStepTime = now
                         return true
@@ -628,6 +657,7 @@ class OzonHireAutomationService : AccessibilityService() {
                     if (screenDetector.isOnOtherTab(root)) {
                         logger.d("On other tab, going to warehouses")
                         navigationHelper.clickWarehousesTab(root)
+                        stateManager.markNavigation()
                         gestureHelper.updateLastClickTime()
                         stateManager.lastStepTime = now
                         return true
@@ -657,6 +687,19 @@ class OzonHireAutomationService : AccessibilityService() {
         val profile = getEffectiveProfile()
         stateManager.forceGoToWarehousesOnStart = false
 
+        // Если уже кликнули и ждём перехода — не делаем ничего
+        if (stateManager.waitingForWarehouseLoad.get()) {
+            logger.d("⏳ Waiting for process screen to load...")
+            return
+        }
+
+        // Ждём после навигации
+        if (stateManager.isWaitingAfterNav()) {
+            logger.d("⏳ Waiting after navigation...")
+            return
+        }
+
+        // Фильтр открыт — обрабатываем его
         if (screenDetector.isFilterModalOpen(root)) {
             logger.d("🎛️ [FILTER in WAREHOUSE] Working with filter modal...")
             if (!stateManager.filterConfigured) {
@@ -671,17 +714,9 @@ class OzonHireAutomationService : AccessibilityService() {
             return
         }
 
-        if (!stateManager.filterConfigured) {
-            logger.d("🔧 Configuring warehouse filter...")
-            filterActions.setupWarehouseFilter(root)
-            gestureHelper.updateLastClickTime(300L)
-            return
-        }
-
+        // Склад ещё не загружен
         if (!screenDetector.isWarehouseLoaded(root)) {
-            if (stateManager.waitingForWarehouseLoad.get()) return
             if (now - stateManager.lastStepTime < profile.loadWait) return
-
             logger.w("Warehouse load timeout")
             navigationHelper.goToWarehousesSmart(root)
             gestureHelper.updateLastClickTime()
@@ -689,11 +724,19 @@ class OzonHireAutomationService : AccessibilityService() {
             return
         }
 
+        // Фильтр не настроен — настраиваем
+        if (!stateManager.filterConfigured) {
+            logger.d("🔧 Configuring warehouse filter...")
+            filterActions.setupWarehouseFilter(root)
+            gestureHelper.updateLastClickTime(300L)
+            stateManager.lastStepTime = now
+            return
+        }
+
+        // Всё готово — кликаем по складу
         warehouseActions.clickWarehouse(root)
         stateManager.lastStepTime = now
-    }
-
-    // ==================== START/STOP ====================
+    }    // ==================== START/STOP ====================
 
     fun startAutomation() {
         if (stateManager.isRunning.get()) {
@@ -703,6 +746,7 @@ class OzonHireAutomationService : AccessibilityService() {
 
         stateManager.reset()
         stateManager.resetForStart()
+        warehouseActions.reset()
         initializeSpeedProfile()
         initTelegram()
 
@@ -722,8 +766,8 @@ class OzonHireAutomationService : AccessibilityService() {
 
     private fun waitForOzonAndGoToWarehouses() {
         val startTime = System.currentTimeMillis()
-        val maxWaitTime = 10_000L
-        val checkInterval = 500L
+        val maxWaitTime = 12_000L
+        val checkInterval = 700L
 
         val checker = object : Runnable {
             override fun run() {
@@ -746,13 +790,6 @@ class OzonHireAutomationService : AccessibilityService() {
                         return
                     }
 
-                    if (!screenDetector.isOzonAppLoaded(root, navigationHelper::findWarehouseNodeAnywhere)) {
-                        logger.d("Waiting for Ozon UI to load... ${elapsed}ms")
-                        handler.postDelayed(this, checkInterval)
-                        NodeTreeHelper.safeRecycle(root)
-                        return
-                    }
-
                     if (checkAndDismissPopups(root)) {
                         logger.d("Dismissed popup, retrying...")
                         handler.postDelayed(this, 500L)
@@ -760,7 +797,23 @@ class OzonHireAutomationService : AccessibilityService() {
                         return
                     }
 
-                    logger.d("✅ Ozon loaded, checking warehouse tab")
+                    if (screenDetector.isOnBookingsTab(root)) {
+                        logger.d("🚫 On bookings tab at start, going to warehouses")
+                        navigationHelper.clickWarehousesTab(root)
+                        stateManager.markNavigation()
+                        NodeTreeHelper.safeRecycle(root)
+                        handler.postDelayed(this, 800L)
+                        return
+                    }
+
+                    if (!screenDetector.isOzonAppLoaded(root, navigationHelper::findWarehouseNodeAnywhere)) {
+                        logger.d("Waiting for Ozon UI to load... ${elapsed}ms")
+                        handler.postDelayed(this, checkInterval)
+                        NodeTreeHelper.safeRecycle(root)
+                        return
+                    }
+
+                    logger.d("✅ Ozon loaded, going to warehouse tab")
 
                     if (screenDetector.isWarehouseScreen(root)) {
                         logger.d("Already on warehouse screen")
@@ -771,9 +824,9 @@ class OzonHireAutomationService : AccessibilityService() {
                     }
 
                     navigationHelper.clickWarehousesTab(root)
+                    stateManager.markNavigation()
                     NodeTreeHelper.safeRecycle(root)
-
-                    handler.postDelayed(this, 700L)
+                    handler.postDelayed(this, 800L)
 
                 } catch (e: Exception) {
                     logger.e("Error in waitForOzonAndGoToWarehouses: ${e.message}", e)
@@ -785,6 +838,7 @@ class OzonHireAutomationService : AccessibilityService() {
 
         handler.postDelayed(checker, 2000L)
     }
+
 
     private fun startTicker() {
         if (!stateManager.isRunning.get()) return
@@ -867,6 +921,7 @@ class OzonHireAutomationService : AccessibilityService() {
                     val root = findOzonRoot()
                     if (root != null) {
                         navigationHelper.clickWarehousesTab(root)
+                        stateManager.markNavigation()
                         NodeTreeHelper.safeRecycle(root)
                     }
                 }, 2000L)

@@ -26,287 +26,210 @@ class CalendarActions(
     private val handler = Handler(Looper.getMainLooper())
 
     fun handleCalendar(root: AccessibilityNodeInfo): List<String> {
-        val availableDates = mutableListOf<String>()
-
         try {
             val targetDates = prefs.targetDates
             if (targetDates.isEmpty()) {
+                logger.d("No target dates set, exiting calendar")
                 exitCalendarAndRefresh(root)
                 return emptyList()
             }
 
             val targetDaysByMonth = buildTargetDaysByMonth()
             if (targetDaysByMonth.isEmpty()) {
-                logger.w("No valid target dates parsed from settings: $targetDates")
+                logger.w("No valid target dates parsed: $targetDates")
                 exitCalendarAndRefresh(root)
                 return emptyList()
             }
-
-            if (!handleMonthNavigation(root, targetDaysByMonth.keys)) return emptyList()
 
             val currentMonth = getCurrentCalendarMonth(root)
-            val targetDays = currentMonth?.let { targetDaysByMonth[it] }.orEmpty()
-
-            if (targetDays.isEmpty()) {
-                logger.d("No target days in current month, trying to move forward")
-                if (currentMonth != null && tryNavigateToNextTargetMonth(root, currentMonth, targetDaysByMonth.keys)) {
-                    return emptyList()
-                }
+            if (currentMonth == null) {
+                logger.w("Cannot determine current calendar month")
                 exitCalendarAndRefresh(root)
                 return emptyList()
             }
 
-            val (availableContainers, foundDates) = findAvailableShiftContainers(root)
-            availableDates.addAll(foundDates)
+            logger.d("📅 Calendar month: ${currentMonth + 1}, target months: ${targetDaysByMonth.keys.map { it + 1 }}")
 
-            try {
-                val availableDays = availableContainers.mapNotNull {
-                    extractDayFromContainer(it)
-                }.toSet()
-
-                val daysToBook = targetDays.intersect(availableDays)
-
-                if (daysToBook.isEmpty()) {
-                    logger.d("No target days in current month. Target: $targetDays, Available: $availableDays")
-
-                    if (currentMonth != null && tryNavigateToNextTargetMonth(root, currentMonth, targetDaysByMonth.keys)) {
-                        return availableDates
-                    }
-
+            // Если текущий месяц не в целевых — листаем вперёд
+            if (!targetDaysByMonth.containsKey(currentMonth)) {
+                logger.d("Month ${currentMonth + 1} not in targets, navigating forward...")
+                if (!navigateToNextMonth(root)) {
+                    logger.w("Cannot navigate to next month, exiting")
                     exitCalendarAndRefresh(root)
-                    return availableDates
                 }
-
-                for (day in daysToBook.sorted()) {
-                    val container = availableContainers.firstOrNull {
-                        extractDayFromContainer(it) == day
-                    }
-
-                    if (container != null && gestureHelper.tryClickNode(container)) {
-                        val month = (currentMonth ?: java.util.Calendar.getInstance().get(java.util.Calendar.MONTH)) + 1
-                        val selectedDate = String.format(java.util.Locale.US, "%02d.%02d", day, month)
-                        stateManager.lastSelectedBookingDate = selectedDate
-                        logger.d("✅ Clicked day $day ($selectedDate)")
-
-                        handler.postDelayed({
-                            val postRoot = findOzonRoot()
-                            try {
-                                if (postRoot != null && screenDetector.isTimePickerModal(postRoot)) {
-                                    logger.d("🎉 Time picker opened!")
-                                }
-                            } finally {
-                                NodeTreeHelper.safeRecycle(postRoot)
-                            }
-                        }, 100L)
-
-                        NodeTreeHelper.safeRecycleAll(availableContainers)
-                        return availableDates
-                    }
-                }
-
-                exitCalendarAndRefresh(root)
-                return availableDates
-
-            } finally {
-                NodeTreeHelper.safeRecycleAll(availableContainers)
+                return emptyList()
             }
 
+            val targetDays = targetDaysByMonth[currentMonth] ?: emptySet()
+            logger.d("Target days in month ${currentMonth + 1}: $targetDays")
+
+            // Ищем доступные слоты из DOM
+            val availableNodes = findAvailableShiftNodes(root)
+            logger.d("Found ${availableNodes.size} available shift nodes")
+
+            if (availableNodes.isEmpty()) {
+                logger.d("No available shifts in month ${currentMonth + 1}")
+                // Пробуем следующий месяц если есть целевые даты там
+                val hasNextTarget = targetDaysByMonth.keys.any { it > currentMonth }
+                if (hasNextTarget) {
+                    logger.d("Navigating to next month for more targets...")
+                    if (!navigateToNextMonth(root)) {
+                        exitCalendarAndRefresh(root)
+                    }
+                } else {
+                    exitCalendarAndRefresh(root)
+                }
+                return emptyList()
+            }
+
+            // Собираем доступные дни
+            val availableDays = mutableMapOf<Int, AccessibilityNodeInfo>()
+            val availableDateStrings = mutableListOf<String>()
+
+            for (node in availableNodes) {
+                val day = extractDayFromNode(node)
+                if (day != null) {
+                    availableDays[day] = node
+                    availableDateStrings.add(
+                        String.format(java.util.Locale.US, "%02d.%02d", day, currentMonth + 1)
+                    )
+                    logger.d("✅ Available day: $day")
+                }
+            }
+
+            logger.d("Available days: ${availableDays.keys.sorted()}")
+            logger.d("Target days: $targetDays")
+
+            // Ищем пересечение
+            val daysToBook = targetDays.intersect(availableDays.keys)
+            logger.d("Days to book: $daysToBook")
+
+            if (daysToBook.isEmpty()) {
+                logger.d("No matching days, checking next month...")
+                val hasNextTarget = targetDaysByMonth.keys.any { it > currentMonth }
+                if (hasNextTarget) {
+                    if (!navigateToNextMonth(root)) {
+                        exitCalendarAndRefresh(root)
+                    }
+                } else {
+                    exitCalendarAndRefresh(root)
+                }
+                NodeTreeHelper.safeRecycleAll(availableNodes)
+                return availableDateStrings
+            }
+
+            // Кликаем первый подходящий день
+            for (day in daysToBook.sorted()) {
+                val node = availableDays[day] ?: continue
+                logger.d("🎯 Clicking day $day in month ${currentMonth + 1}")
+
+                if (gestureHelper.tryClickNode(node)) {
+                    val selectedDate = String.format(
+                        java.util.Locale.US, "%02d.%02d", day, currentMonth + 1
+                    )
+                    stateManager.lastSelectedBookingDate = selectedDate
+                    logger.d("✅ Clicked day $day ($selectedDate)")
+                    gestureHelper.updateLastClickTime()
+                    NodeTreeHelper.safeRecycleAll(availableNodes)
+                    return availableDateStrings
+                }
+            }
+
+            logger.w("Failed to click any target day")
+            exitCalendarAndRefresh(root)
+            NodeTreeHelper.safeRecycleAll(availableNodes)
+            return availableDateStrings
+
         } catch (e: Exception) {
-            logger.e("handleCalendar error: ${e.message}")
+            logger.e("handleCalendar error: ${e.message}", e)
             exitCalendarAndRefresh(root)
             return emptyList()
         }
     }
 
-    private fun findAvailableShiftContainers(root: AccessibilityNodeInfo): Pair<List<AccessibilityNodeInfo>, List<String>> {
-        val availableDates = mutableListOf<String>()
-        val today = java.util.Calendar.getInstance()
-        val todayDay = today.get(java.util.Calendar.DAY_OF_MONTH)
-        val todayMonth = today.get(java.util.Calendar.MONTH) // 0-11
-        val todayYear = today.get(java.util.Calendar.YEAR)
+    /**
+     * Из DOM: resource-id="HireContainer[name=availableShift]"
+     * clickable="true", enabled="true"
+     * Дочерний TextView содержит число (день)
+     */
+    private fun findAvailableShiftNodes(root: AccessibilityNodeInfo): List<AccessibilityNodeInfo> {
+        val result = mutableListOf<AccessibilityNodeInfo>()
 
-        val currentCalendarMonth = getCurrentCalendarMonth(root) ?: todayMonth
-
-        logger.d("📅 Today: $todayDay.${todayMonth + 1}.$todayYear | Calendar showing: ${currentCalendarMonth + 1}")
-
-        val containers = NodeTreeHelper.collectNodes(root, maxResults = 31) { node ->
-            val resourceId = node.viewIdResourceName ?: ""
-
-            if (!resourceId.contains("name=availableShift]") ||
-                resourceId.contains("unavailable", ignoreCase = true) ||
-                !node.isClickable) {
-                return@collectNodes false
+        NodeTreeHelper.withNodeTree(root, maxDepth = 20) { node ->
+            val resId = node.viewIdResourceName ?: ""
+            if (resId == "HireContainer[name=availableShift]" && node.isClickable) {
+                result.add(node)
             }
+            null
+        }
 
-            // ✅ ПРОВЕРЯЕМ: это прошедший день?
-            val day = extractDayFromContainer(node)
-            if (day != null) {
-                val isPast = isPastDate(day, currentCalendarMonth, todayYear, todayDay, todayMonth, todayYear)
-                val isToday = (day == todayDay && currentCalendarMonth == todayMonth)
+        logger.d("findAvailableShiftNodes: found ${result.size} via resource-id")
 
-                when {
-                    isPast -> {
-                        logger.d("🚫 Skipping PAST date: $day (gray, unclickable)")
-                        false
-                    }
-                    isToday -> {
-                        logger.d("✅ Found TODAY date: $day")
-                        availableDates.add(String.format("%02d.%02d", day, currentCalendarMonth + 1))
-                        true
-                    }
-                    else -> {
-                        logger.d("✅ Found future date: $day")
-                        availableDates.add(String.format("%02d.%02d", day, currentCalendarMonth + 1))
-                        true
+        // Fallback: если resource-id не работает — ищем по clickable + дочерний день
+        if (result.isEmpty()) {
+            logger.d("Fallback: searching clickable calendar cells...")
+            NodeTreeHelper.withNodeTree(root, maxDepth = 20) { node ->
+                if (node.isClickable && node.isEnabled) {
+                    val rect = Rect()
+                    node.getBoundsInScreen(rect)
+                    // Ячейка календаря — квадратная ~135x135px
+                    val isCalendarCell = rect.width() in 100..200 && rect.height() in 100..200
+                    if (isCalendarCell) {
+                        val day = extractDayFromNode(node)
+                        if (day != null && day in 1..31) {
+                            result.add(node)
+                        }
                     }
                 }
-            } else {
-                false
+                null
             }
+            logger.d("Fallback found ${result.size} calendar cells")
         }
 
-        logger.d("Found ${containers.size} clickable available shifts: $availableDates")
-        return containers to availableDates
+        return result
     }
 
-    /**
-     * Проверка: является ли дата прошедшей
-     */
-    private fun isPastDate(
-        day: Int,
-        month: Int,
-        year: Int,
-        todayDay: Int,
-        todayMonth: Int,
-        todayYear: Int
-    ): Boolean {
-        return when {
-            year < todayYear -> true
-            year > todayYear -> false
-            month < todayMonth -> true
-            month > todayMonth -> false
-            day < todayDay -> true
-            else -> false
-        }
-    }
-
-    private fun extractDayFromContainer(container: AccessibilityNodeInfo): Int? {
-        val dayRegex = Regex("^\\d{1,2}$")
-
-        for (i in 0 until container.childCount) {
-            val child = try { container.getChild(i) } catch (_: Exception) { null } ?: continue
+    private fun extractDayFromNode(node: AccessibilityNodeInfo): Int? {
+        // Сначала проверяем дочерние TextView
+        for (i in 0 until node.childCount) {
+            val child = try { node.getChild(i) } catch (_: Exception) { null } ?: continue
             try {
                 val text = child.text?.toString()?.trim()
-                if (text != null && dayRegex.matches(text)) {
-                    return text.toIntOrNull()
+                if (text != null && text.matches(Regex("^\\d{1,2}$"))) {
+                    val day = text.toIntOrNull()
+                    if (day != null && day in 1..31) return day
                 }
             } finally {
                 try { child.recycle() } catch (_: Exception) {}
             }
         }
-
-        val text = container.text?.toString()?.trim()
-        if (text != null && dayRegex.matches(text)) {
+        // Потом сам node
+        val text = node.text?.toString()?.trim()
+        if (text != null && text.matches(Regex("^\\d{1,2}$"))) {
             return text.toIntOrNull()
         }
-
         return null
     }
 
-    private fun handleMonthNavigation(root: AccessibilityNodeInfo, targetMonths: Set<Int>): Boolean {
-        if (!stateManager.monthClicked.get()) return true
-
-        val currentMonth = getCurrentCalendarMonth(root)
-        if (currentMonth == null) return false
-
-        stateManager.pendingMonthTarget?.let { pending ->
-            if (currentMonth == pending) {
-                stateManager.pendingMonthTarget = null
-                stateManager.monthClicked.set(false)
-                stateManager.lastMonthText = null
-                return true
-            }
-
-            return false
-        }
-
-        val previousText = stateManager.lastMonthText
-        val currentText = findMonthTextNode(root)?.text?.toString()
-        if (previousText != null && currentText != null && previousText != currentText) {
-            stateManager.monthClicked.set(false)
-            stateManager.lastMonthText = null
+    private fun navigateToNextMonth(root: AccessibilityNodeInfo): Boolean {
+        if (findAndClickNextMonthButton(root)) {
+            gestureHelper.updateLastClickTime(800L)
+            logger.d("➡️ Navigated to next month")
             return true
         }
-
-        val nextTarget = getNextTargetMonth(currentMonth, targetMonths) ?: return true
-
-        stateManager.pendingMonthTarget?.let { pending ->
-            if (currentMonth == pending) {
-                stateManager.pendingMonthTarget = null
-                stateManager.monthClicked.set(false)
-                stateManager.lastMonthText = null
-            } else {
-                return false
-            }
-        }
-
-        stateManager.pendingMonthTarget = (currentMonth + 1) % 12
-        stateManager.lastMonthText = findMonthTextNode(root)?.text?.toString()
-
-        if (findAndClickNextMonthButton(root)) {
-            stateManager.monthClicked.set(true)
-            gestureHelper.updateLastClickTime()
-            logger.d("Switched calendar month while searching target month. Current=$currentMonth target=$nextTarget")
-            return false
-        }
-
-        stateManager.pendingMonthTarget = null
-        return true
-    }
-
-    private fun tryNavigateToNextTargetMonth(root: AccessibilityNodeInfo, currentMonth: Int, targetMonths: Set<Int>): Boolean {
-        val nextTarget = getNextTargetMonth(currentMonth, targetMonths) ?: return false
-
-        stateManager.pendingMonthTarget = (currentMonth + 1) % 12
-        stateManager.lastMonthText = findMonthTextNode(root)?.text?.toString()
-
-        if (findAndClickNextMonthButton(root)) {
-            stateManager.monthClicked.set(true)
-            gestureHelper.updateLastClickTime()
-            logger.d("Switched month forward to continue scan. Current=$currentMonth target=$nextTarget")
-            return true
-        }
-
-        stateManager.pendingMonthTarget = null
         return false
     }
 
     private fun exitCalendarAndRefresh(root: AccessibilityNodeInfo) {
+        logger.d("🚪 Exiting calendar, going to warehouses...")
         stateManager.exitingCalendar.set(true)
         gestureHelper.updateLastClickTime()
         stateManager.lastStepTime = System.currentTimeMillis()
         navigationHelper.goToWarehousesSmart(root)
-        stateManager.monthClicked.set(false)
-        stateManager.lastMonthText = null
-        stateManager.pendingMonthTarget = null
-    }
-
-    private fun findMonthTextNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        val months = listOf(
-            "январ", "феврал", "март", "апрел", "май", "июн",
-            "июл", "август", "сентябр", "октябр", "ноябр", "декабр"
-        )
-
-        for (m in months) {
-            DomUtils.findNodeByText(root, m)?.let { return it }
-        }
-
-        return null
     }
 
     private fun getCurrentCalendarMonth(root: AccessibilityNodeInfo): Int? {
         val text = findMonthTextNode(root)?.text?.toString()?.lowercase() ?: return null
-
         return when {
             text.contains("январ") -> 0
             text.contains("феврал") -> 1
@@ -324,90 +247,79 @@ class CalendarActions(
         }
     }
 
+    private fun findMonthTextNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val months = listOf(
+            "январ", "феврал", "март", "апрел", "май", "июн",
+            "июл", "август", "сентябр", "октябр", "ноябр", "декабр"
+        )
+        for (m in months) {
+            DomUtils.findNodeByText(root, m)?.let { return it }
+        }
+        return null
+    }
+
     private fun buildTargetDaysByMonth(): Map<Int, Set<Int>> {
         val byMonth = linkedMapOf<Int, MutableSet<Int>>()
-
         prefs.targetDates.forEach { date ->
             val parts = date.split(".")
             val day = parts.getOrNull(0)?.toIntOrNull()
             val month = parts.getOrNull(1)?.toIntOrNull()?.minus(1)
-
             if (day == null || month == null || month !in 0..11 || day !in 1..31) return@forEach
-
             byMonth.getOrPut(month) { linkedSetOf() }.add(day)
         }
-
         return byMonth
-    }
-
-    private fun getNextTargetMonth(currentMonth: Int, targetMonths: Set<Int>): Int? {
-        if (targetMonths.isEmpty()) return null
-
-        return targetMonths
-            .map { target -> target to ((target - currentMonth + 12) % 12) }
-            .filter { (_, distance) -> distance > 0 }
-            .minByOrNull { (_, distance) -> distance }
-            ?.first
     }
 
     private fun findAndClickNextMonthButton(root: AccessibilityNodeInfo): Boolean {
         try {
-            val monthNode = findMonthTextNode(root)
-            if (monthNode != null) {
-                val parent = try { monthNode.parent } catch (_: Exception) { null }
+            val monthNode = findMonthTextNode(root) ?: return false
+            val monthRect = Rect()
+            monthNode.getBoundsInScreen(monthRect)
 
-                if (parent != null) {
-                    val monthRect = Rect()
-                    try { monthNode.getBoundsInScreen(monthRect) } catch (_: Exception) {}
+            val parent = try { monthNode.parent } catch (_: Exception) { null } ?: return false
 
-                    for (i in 0 until parent.childCount) {
-                        var child: AccessibilityNodeInfo? = null
-                        try {
-                            child = parent.getChild(i)
-                            if (child != null && child.isClickable) {
-                                val childRect = Rect()
-                                child.getBoundsInScreen(childRect)
-
-                                if (childRect.left >= monthRect.right - 8 || monthRect.right == 0) {
-                                    if (DomUtils.clickNode(child)) return true
-                                }
-                            }
-                        } finally {
-                            NodeTreeHelper.safeRecycle(child)
+            // Кнопка "следующий месяц" — справа от текста месяца
+            for (i in 0 until parent.childCount) {
+                val child = try { parent.getChild(i) } catch (_: Exception) { null } ?: continue
+                try {
+                    if (child.isClickable) {
+                        val rect = Rect()
+                        child.getBoundsInScreen(rect)
+                        if (rect.left >= monthRect.right - 8) {
+                            if (DomUtils.clickNode(child)) return true
                         }
                     }
+                } finally {
+                    try { child.recycle() } catch (_: Exception) {}
                 }
             }
 
+            // Fallback: кнопка в правой верхней части экрана
+            // Из DOM: bounds="[923,919][1058,1054]"
             val rootRect = Rect()
-            try {
-                root.getBoundsInScreen(rootRect)
-            } catch (_: Exception) {
-                rootRect.set(0, 0, 1080, 1920)
-            }
+            root.getBoundsInScreen(rootRect)
 
-            NodeTreeHelper.withNodeTree(root, maxDepth = 15) { node ->
-                val cls = node.className?.toString() ?: ""
-                if (cls.contains("Button", ignoreCase = true) || node.isClickable) {
+            var found = false
+            NodeTreeHelper.withNodeTree(root, maxDepth = 10) { node ->
+                if (node.isClickable) {
                     val rect = Rect()
                     node.getBoundsInScreen(rect)
-
-                    val inTopArea = rect.top in 0..(rootRect.height() / 3)
+                    val inTopArea = rect.top < rootRect.height() / 2
                     val onRight = rect.centerX() > rootRect.centerX()
-
-                    if (inTopArea && onRight && node.isClickable) {
+                    if (inTopArea && onRight) {
                         if (DomUtils.clickNode(node)) {
+                            found = true
                             return@withNodeTree true
                         }
                     }
                 }
                 null
-            }?.let { return true }
+            }
+            return found
 
         } catch (e: Exception) {
-            logger.e("findAndClickNextMonthButton error: ${e.message}")
+            logger.e("findAndClickNextMonthButton error: ${e.message}", e)
+            return false
         }
-
-        return false
     }
 }

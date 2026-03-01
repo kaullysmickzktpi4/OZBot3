@@ -11,6 +11,7 @@ class StateManager {
     val goingToWarehouses = AtomicBoolean(false)
     val waitingForWarehouseLoad = AtomicBoolean(false)
     val monthClicked = AtomicBoolean(false)
+    val waitingAfterNavigation = AtomicBoolean(false) // ← НОВЫЙ ФЛАГ
 
     @Volatile var lastMonthText: String? = null
     @Volatile var pendingMonthTarget: Int? = null
@@ -22,6 +23,7 @@ class StateManager {
     @Volatile var automationStartTime = 0L
     @Volatile var forceGoToWarehousesOnStart = false
     @Volatile var lastSelectedBookingDate: String? = null
+    @Volatile var lastNavigationTime = 0L // ← НОВЫЙ — время последней навигации
 
     val consecSuccessGestures = AtomicInteger(0)
     val consecCancelledGestures = AtomicInteger(0)
@@ -45,10 +47,14 @@ class StateManager {
     val SUCCESS_TO_SPEEDUP = 8
     val FAILS_TO_SLOWDOWN = 3
 
+    // Минимальное время ожидания после навигации (мс)
+    val NAV_WAIT_MS = 800L
+
     fun reset() {
         exitingCalendar.set(false)
         goingToWarehouses.set(false)
         waitingForWarehouseLoad.set(false)
+        waitingAfterNavigation.set(false) // ← сбрасываем
         monthClicked.set(false)
         pendingMonthTarget = null
         lastMonthText = null
@@ -60,6 +66,7 @@ class StateManager {
         filterConfigured = false
         forceGoToWarehousesOnStart = false
         lastSelectedBookingDate = null
+        lastNavigationTime = 0L
     }
 
     fun resetForStart() {
@@ -72,5 +79,16 @@ class StateManager {
         lastUiChangeTime = System.currentTimeMillis()
         freezeDetectedHash = 0
         restartCount.set(0)
+    }
+
+    // Проверка — нужно ли ждать после навигации
+    fun isWaitingAfterNav(): Boolean {
+        if (lastNavigationTime == 0L) return false
+        return System.currentTimeMillis() - lastNavigationTime < NAV_WAIT_MS
+    }
+
+    // Вызывай после каждого клика на таб/навигацию
+    fun markNavigation() {
+        lastNavigationTime = System.currentTimeMillis()
     }
 }

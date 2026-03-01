@@ -136,6 +136,15 @@ object DomUtils {
         return null
     }
 
+    fun hasResourceId(root: AccessibilityNodeInfo, resourceId: String): Boolean {
+        return try {
+            val nodes = root.findAccessibilityNodeInfosByViewId(resourceId)
+            !nodes.isNullOrEmpty()
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     // ---------- Gesture-клик: сдвиг вправо для Next, двойной тап и лог ----------
     fun clickNodeByGesture(service: AccessibilityService, node: AccessibilityNodeInfo, shift: Int = 20) {
         val rect = Rect()
