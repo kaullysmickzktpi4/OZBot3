@@ -3,7 +3,6 @@ package com.ozbot.automation.monitoring
 import com.ozbot.automation.core.StateManager
 import com.ozbot.automation.utils.Logger
 import com.ozbot.automation.utils.SpeedProfile
-import com.ozbot.telegram.TelegramBot
 
 class MemoryManager(
     private val stateManager: StateManager,
@@ -12,7 +11,6 @@ class MemoryManager(
 ) {
     companion object {
         private const val GC_INTERVAL_MS = 60_000L
-        private const val RAM_WARNING_THRESHOLD_PERCENT = 80
     }
 
     fun maybeForceGc() {
@@ -32,47 +30,11 @@ class MemoryManager(
                     logger.d("📊 Mem: ${usedMb}MB/${maxMb}MB | Speed: $profile | UI age: ${frozenSec}s | tick #$tick")
                 }
 
-                maybeSendTelegramReport(usedMb, maxMb, tick)
-                checkRamWarning(usedMb, maxMb)
                 System.gc()
             }
         }
     }
 
-    private fun maybeSendTelegramReport(usedMb: Long, maxMb: Long, tick: Long) {
-        if (!TelegramBot.isEnabled()) return
-
-        val now = System.currentTimeMillis()
-        val intervalMs = 30 * 60 * 1000L
-
-        if (now - stateManager.lastTelegramReportTime >= intervalMs) {
-            stateManager.lastTelegramReportTime = now
-            val uptime = formatUptime(now - stateManager.automationStartTime)
-            TelegramBot.sendStatusReport(
-                usedMb,
-                maxMb,
-                getCurrentProfile().name,
-                tick,
-                stateManager.restartCount.get(),
-                uptime
-            )
-        }
-    }
-
-    private fun checkRamWarning(usedMb: Long, maxMb: Long) {
-        if (!TelegramBot.isEnabled() || maxMb <= 0) return
-
-        val now = System.currentTimeMillis()
-        if (now - stateManager.lastRamWarningTime < 10 * 60 * 1000L) return
-
-        val percent = usedMb * 100 / maxMb
-        if (percent >= RAM_WARNING_THRESHOLD_PERCENT) {
-            stateManager.lastRamWarningTime = now
-            TelegramBot.sendMemoryWarning(usedMb, maxMb)
-        }
-    }
-
-    // ✅ СДЕЛАЙ ПУБЛИЧНЫМ
     fun formatUptime(millis: Long): String {
         val seconds = millis / 1000
         val minutes = seconds / 60

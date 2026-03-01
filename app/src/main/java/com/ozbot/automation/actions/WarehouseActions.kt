@@ -1,5 +1,7 @@
 package com.ozbot.automation.actions
 
+import android.os.Handler
+import android.os.Looper
 import android.view.accessibility.AccessibilityNodeInfo
 import com.ozbot.automation.core.StateManager
 import com.ozbot.automation.utils.Logger
@@ -14,20 +16,20 @@ class WarehouseActions(
     private val getCurrentProfile: () -> SpeedProfile
 ) {
 
-    // Время последнего клика по складу — защита от двойного клика
+    // ✅ FIX: один Handler на весь класс вместо создания нового каждый раз
+    private val handler = Handler(Looper.getMainLooper())
+
     @Volatile private var lastWarehouseClickTime = 0L
-    private val WAREHOUSE_CLICK_COOLDOWN = 3000L // минимум 3 сек между кликами
+    private val WAREHOUSE_CLICK_COOLDOWN = 3000L
 
     fun clickWarehouse(root: AccessibilityNodeInfo) {
         val now = System.currentTimeMillis()
 
-        // ✅ Защита от повторного клика — ждём минимум 3 сек
         if (now - lastWarehouseClickTime < WAREHOUSE_CLICK_COOLDOWN) {
             logger.d("⏳ Warehouse click cooldown, skipping...")
             return
         }
 
-        // ✅ Ищем кнопку "Записаться" — кликабельный родитель
         val nodes = DomUtils.findAllNodesByText(root, "Записаться")
         if (nodes.isEmpty()) {
             logger.d("❌ 'Записаться' not found")
@@ -43,30 +45,30 @@ class WarehouseActions(
         }
 
         logger.d("🎯 Clicking 'Записаться' on warehouse")
-
         clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         gestureHelper.updateLastClickTime()
 
         lastWarehouseClickTime = now
         stateManager.waitingForWarehouseLoad.set(true)
         stateManager.lastStepTime = now
-        stateManager.markNavigation() // ждём после навигации
+        stateManager.markNavigation()
 
-        // Сбрасываем флаг через достаточное время
         val waitTime = when (getCurrentProfile()) {
             SpeedProfile.FAST -> 1500L
             SpeedProfile.NORMAL -> 2000L
             SpeedProfile.SLOW -> 2500L
         }
 
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+        // ✅ FIX: используем поле handler, а не новый объект
+        handler.postDelayed({
             stateManager.waitingForWarehouseLoad.set(false)
             logger.d("✅ Ready to check process screen")
         }, waitTime)
     }
 
-    // Сброс при перезапуске
     fun reset() {
         lastWarehouseClickTime = 0L
+        // ✅ FIX: отменяем pending callbacks при сбросе
+        handler.removeCallbacksAndMessages(null)
     }
 }

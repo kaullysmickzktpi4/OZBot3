@@ -1,6 +1,6 @@
 package com.ozbot.model
 
-data class Profile(
+data class rofile(
     val id: Long = 0,
     val name: String,                    // Название профиля
     val processName: String,             // Название процесса ("Инвентаризация", "Подбор")

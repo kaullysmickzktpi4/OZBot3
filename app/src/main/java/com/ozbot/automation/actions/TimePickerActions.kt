@@ -12,7 +12,6 @@ import com.ozbot.data.UserPreferences
 import com.ozbot.data.repository.BookingRepository
 import com.ozbot.data.database.BookingStatus
 import com.ozbot.automation.navigation.GestureHelper
-import com.ozbot.automation.navigation.NavigationHelper
 import com.ozbot.telegram.TelegramBot
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -53,16 +52,21 @@ class TimePickerActions(
 
                     if (nodes.isNotEmpty()) {
                         for (node in nodes) {
-                            val checkbox = findNearestCheckbox(node, allCheckboxes) ?: continue
+                            val checkbox = findNearestCheckbox(node, allCheckboxes)
+
+                            if (checkbox == null) continue
 
                             if (checkbox.isChecked) {
+                                // ✅ FIX: recycle перед return
+                                NodeTreeHelper.safeRecycleAll(nodes)
                                 clickBookButton(root)
                                 return
                             }
 
                             if (tryClickCheckbox(checkbox)) {
                                 logger.d("✅ Checkbox clicked")
-
+                                // ✅ FIX: recycle перед return
+                                NodeTreeHelper.safeRecycleAll(nodes)
                                 handler.postDelayed({
                                     val postRoot = findOzonRoot()
                                     try {
@@ -71,15 +75,16 @@ class TimePickerActions(
                                         NodeTreeHelper.safeRecycle(postRoot)
                                     }
                                 }, 200L)
-
                                 return
                             }
                         }
+                        // ✅ FIX: recycle если никто не кликнул
+                        NodeTreeHelper.safeRecycleAll(nodes)
                     }
                 }
             }
 
-            // Если не нашли нужное время, кликаем на первый свободный чекбокс
+            // Если не нашли нужное время — кликаем первый свободный чекбокс
             val firstUnchecked = allCheckboxes.firstOrNull { !it.isChecked }
             if (firstUnchecked != null && tryClickCheckbox(firstUnchecked)) {
                 handler.postDelayed({
@@ -93,6 +98,7 @@ class TimePickerActions(
             }
 
         } finally {
+            // ✅ allCheckboxes всегда recycle
             NodeTreeHelper.safeRecycleAll(allCheckboxes)
         }
     }
@@ -106,8 +112,13 @@ class TimePickerActions(
             logger.d("🎉 BOOKING!")
             clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)
 
+            // ✅ FIX: recycle ноды текста после использования
+            NodeTreeHelper.safeRecycleAll(bookNodes)
+
             val process = prefs.process
-            val date = stateManager.lastSelectedBookingDate ?: prefs.targetDates.firstOrNull() ?: "Unknown"
+            val date = stateManager.lastSelectedBookingDate
+                ?: prefs.targetDates.firstOrNull()
+                ?: "Unknown"
             val time = prefs.timeSlots.firstOrNull()?.toDisplayString() ?: "Unknown"
 
             TelegramBot.sendBookingSuccess(process, date, time)
@@ -126,7 +137,6 @@ class TimePickerActions(
             if (cls.contains("Button", ignoreCase = true) && node.isClickable) {
                 val rect = Rect()
                 node.getBoundsInScreen(rect)
-
                 if (rect.right > 900 && rect.top < 1100) {
                     node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                     return@withNodeTree true
@@ -156,7 +166,10 @@ class TimePickerActions(
         return variants.take(20)
     }
 
-    private fun findNodesByPartialTimeMatch(root: AccessibilityNodeInfo, timeStr: String): List<AccessibilityNodeInfo> {
+    private fun findNodesByPartialTimeMatch(
+        root: AccessibilityNodeInfo,
+        timeStr: String
+    ): List<AccessibilityNodeInfo> {
         val timeParts = timeStr.replace(Regex("[–—-]"), "-")
             .split("-")
             .map { it.trim() }
@@ -207,7 +220,6 @@ class TimePickerActions(
                 val cbRect = Rect()
                 checkbox.getBoundsInScreen(cbRect)
                 val distance = kotlin.math.abs(cbRect.centerY() - timeCenterY)
-
                 if (distance <= 200 && distance < bestDistance) {
                     bestDistance = distance
                     best = checkbox
@@ -219,14 +231,10 @@ class TimePickerActions(
     }
 
     private fun tryClickCheckbox(checkbox: AccessibilityNodeInfo): Boolean {
-        // Способ 1: ACTION_CLICK
         try {
-            if (checkbox.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-                return true
-            }
+            if (checkbox.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
         } catch (_: Exception) {}
 
-        // Способ 2: Gesture по координатам
         try {
             val rect = Rect()
             checkbox.getBoundsInScreen(rect)
@@ -237,7 +245,6 @@ class TimePickerActions(
             }
         } catch (_: Exception) {}
 
-        // Способ 3: DomUtils.tapNode
         try {
             return gestureHelper.tryClickNode(checkbox)
         } catch (_: Throwable) {}

@@ -1,6 +1,8 @@
 package com.ozbot.automation.actions
 
 import android.graphics.Rect
+import android.os.Handler
+import android.os.Looper
 import android.view.accessibility.AccessibilityNodeInfo
 import com.ozbot.automation.core.ScreenDetector
 import com.ozbot.automation.core.StateManager
@@ -21,6 +23,8 @@ class ProcessActions(
     private val findOzonRoot: () -> AccessibilityNodeInfo?
 ) {
 
+    private val handler = Handler(Looper.getMainLooper())
+
     fun clickProcess(root: AccessibilityNodeInfo) {
         val process = prefs.process
         if (process.isEmpty()) return
@@ -30,7 +34,6 @@ class ProcessActions(
             return
         }
 
-        // Ищем сразу без скролла
         val nodes = DomUtils.findAllNodesByText(root, process)
         if (nodes.isNotEmpty()) {
             val node = nodes.first()
@@ -44,7 +47,6 @@ class ProcessActions(
             }
         }
 
-        // Не нашли — скроллим максимум 2 раза
         logger.d("Process '$process' not visible, scrolling (max 2x)...")
         if (fastScrollDown(root, process)) {
             logger.d("Process found after scrolling!")
@@ -60,7 +62,7 @@ class ProcessActions(
         stateManager.waitingForWarehouseLoad.set(true)
         stateManager.lastStepTime = System.currentTimeMillis()
         gestureHelper.updateLastClickTime()
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+        handler.postDelayed({
             stateManager.waitingForWarehouseLoad.set(false)
         }, 400L)
     }
@@ -81,22 +83,27 @@ class ProcessActions(
                 return false
             }
 
-            // ← УМЕНЬШЕНО: максимум 2 скролла при любом профиле
             val maxSwipes = 2
 
             for (i in 0 until maxSwipes) {
                 gestureHelper.performFastSwipeUp(rect)
-                Thread.sleep(80L)
 
-                val newRoot = findOzonRoot()
-                if (newRoot != null) {
-                    val found = DomUtils.findAllNodesByText(newRoot, targetText)
-                    NodeTreeHelper.safeRecycle(newRoot)
-                    if (found.isNotEmpty()) {
-                        logger.d("✅ Found '$targetText' after ${i + 1} swipes!")
-                        return true
+                // ✅ FIX: заменили Thread.sleep на postDelayed через handler
+                // чтобы не блокировать main thread
+                var found = false
+                handler.postDelayed({
+                    val newRoot = findOzonRoot()
+                    if (newRoot != null) {
+                        val nodes = DomUtils.findAllNodesByText(newRoot, targetText)
+                        NodeTreeHelper.safeRecycle(newRoot)
+                        if (nodes.isNotEmpty()) {
+                            logger.d("✅ Found '$targetText' after ${i + 1} swipes!")
+                            found = true
+                        }
                     }
-                }
+                }, 80L)
+
+                if (found) return true
             }
 
             logger.d("'$targetText' not found after $maxSwipes swipes")
@@ -108,7 +115,10 @@ class ProcessActions(
         }
     }
 
-    private fun isNodeInNoSlotsSection(root: AccessibilityNodeInfo, targetNode: AccessibilityNodeInfo): Boolean {
+    private fun isNodeInNoSlotsSection(
+        root: AccessibilityNodeInfo,
+        targetNode: AccessibilityNodeInfo
+    ): Boolean {
         val noSlotsNodes = DomUtils.findAllNodesByText(root, "НЕТ МЕСТ")
         if (noSlotsNodes.isEmpty()) return false
 

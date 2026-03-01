@@ -11,7 +11,9 @@ import com.ozbot.data.UserPreferences
 import com.ozbot.data.repository.BookingRepository
 import com.ozbot.automation.navigation.GestureHelper
 import com.ozbot.automation.navigation.NavigationHelper
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class CalendarActions(
     private val prefs: UserPreferences,
@@ -21,15 +23,20 @@ class CalendarActions(
     private val gestureHelper: GestureHelper,
     private val navigationHelper: NavigationHelper,
     private val screenDetector: ScreenDetector,
-    private val findOzonRoot: () -> AccessibilityNodeInfo?
+    private val findOzonRoot: () -> AccessibilityNodeInfo?,
+    private val scope: CoroutineScope? = null
 ) {
 
     companion object {
         private const val RES_AVAILABLE = "HireContainer[name=availableShift]"
         private const val RES_QUEUE     = "HireContainer[name=queueShift]"
         private const val RES_DAY_TAKEN = "HireContainer[name=dayShift]"
-        private const val RES_UNAVAIL   = "HireContainer[name=unavailableShift]"
+        private const val BOOKED_DATES_CACHE_MS = 30_000L
     }
+
+    // ✅ FIX: кэш вместо runBlocking — поля внутри класса
+    @Volatile private var cachedBookedDates: List<String> = emptyList()
+    @Volatile private var lastBookedDatesFetch = 0L
 
     fun handleCalendar(root: AccessibilityNodeInfo): List<String> {
         try {
@@ -73,13 +80,20 @@ class CalendarActions(
                 logger.d("⏭ Days already taken in UI (dayShift): $takenDaysInUI — will skip")
             }
 
-            val alreadyBookedDates: List<String> = try {
-                runBlocking { repo.getBookedDates() }
-            } catch (e: Exception) {
-                logger.w("Failed to get booked dates from DB: ${e.message}")
-                emptyList()
+            // ✅ FIX: не блокируем main thread — обновляем кэш в IO потоке
+            val now = System.currentTimeMillis()
+            if (now - lastBookedDatesFetch > BOOKED_DATES_CACHE_MS) {
+                scope?.launch(Dispatchers.IO) {
+                    cachedBookedDates = try {
+                        repo.getBookedDates()
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+                    lastBookedDatesFetch = System.currentTimeMillis()
+                }
             }
-            logger.d("Already booked in DB: $alreadyBookedDates")
+            val alreadyBookedDates = cachedBookedDates
+            logger.d("Already booked in DB (cached): $alreadyBookedDates")
 
             val availableNodes = findAvailableShiftNodes(root)
             logger.d("Found ${availableNodes.size} available/queue shift nodes")
@@ -275,15 +289,22 @@ class CalendarActions(
         }
     }
 
+    // ✅ FIX: один обход дерева вместо 12
     private fun findMonthTextNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        val months = listOf(
+        val monthPatterns = listOf(
             "январ", "феврал", "март", "апрел", "май", "июн",
             "июл", "август", "сентябр", "октябр", "ноябр", "декабр"
         )
-        for (m in months) {
-            DomUtils.findNodeByText(root, m)?.let { return it }
+        var found: AccessibilityNodeInfo? = null
+        NodeTreeHelper.withNodeTree(root, maxDepth = 10) { node ->
+            val text = node.text?.toString()?.lowercase() ?: ""
+            if (monthPatterns.any { text.contains(it) }) {
+                found = node
+                return@withNodeTree true
+            }
+            null
         }
-        return null
+        return found
     }
 
     private fun buildTargetDaysByMonth(): Map<Int, Set<Int>> {

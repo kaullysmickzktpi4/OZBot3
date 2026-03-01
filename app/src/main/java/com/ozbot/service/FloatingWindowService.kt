@@ -53,13 +53,6 @@ class FloatingWindowService : Service() {
     private var btnOk: Button? = null
     private var btnCancel: Button? = null
 
-    // Telegram для друзей
-    private var friendsEnableCheck: CheckBox? = null
-
-    private var friendsTokenInput: EditText? = null
-
-    private var friendsChatInput: EditText? = null
-
     private val selectedDates = mutableSetOf<Long>()
     private var currentYear: Int = 0
     private var currentMonth: Int = 0
@@ -92,14 +85,11 @@ class FloatingWindowService : Service() {
     @SuppressLint("InflateParams")
     override fun onCreate() {
         super.onCreate()
-
         userPreferences = UserPreferences(this)
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-
         val cal = Calendar.getInstance()
         currentYear = cal.get(Calendar.YEAR)
         currentMonth = cal.get(Calendar.MONTH)
-
         createFloatingWindow()
     }
 
@@ -110,14 +100,12 @@ class FloatingWindowService : Service() {
 
         mainLayout = floatingView?.findViewById(R.id.mainLayout)
         runningLayout = floatingView?.findViewById(R.id.runningLayout)
-
         processSpinner = floatingView?.findViewById(R.id.processSpinner)
         timeSpinner = floatingView?.findViewById(R.id.timeSpinner)
         speedSpinner = floatingView?.findViewById(R.id.speedSpinner)
         datesButton = floatingView?.findViewById(R.id.datesButton)
         startButton = floatingView?.findViewById(R.id.startButton)
         closeButton = floatingView?.findViewById(R.id.closeButton)
-
         statusText = floatingView?.findViewById(R.id.statusText)
         pauseButton = floatingView?.findViewById(R.id.pauseButton)
         stopButton = floatingView?.findViewById(R.id.stopButton)
@@ -125,12 +113,10 @@ class FloatingWindowService : Service() {
         setupSpinners()
         setupButtons()
         loadSavedSettings()
-
         showMainWindow()
 
         val params = createWindowParams(focusable = false)
         windowManager.addView(floatingView, params)
-
         setupDragging(params)
     }
 
@@ -141,23 +127,18 @@ class FloatingWindowService : Service() {
             @Suppress("DEPRECATION")
             WindowManager.LayoutParams.TYPE_PHONE
         }
-
         val flags = if (focusable) {
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
         } else {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
         }
-
         return WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
-            layoutFlag,
-            flags,
-            PixelFormat.TRANSLUCENT
+            layoutFlag, flags, PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 50
-            y = 200
+            x = 50; y = 200
         }
     }
 
@@ -181,7 +162,6 @@ class FloatingWindowService : Service() {
                 val selectedLabel = selected.first
                 val selectedProfile = selected.second
                 userPreferences.speedProfile = selectedProfile.name
-
                 val service = OzonHireAutomationService.getInstance()
                 if (service?.isAutomationRunning() == true) {
                     try {
@@ -192,50 +172,28 @@ class FloatingWindowService : Service() {
                     }
                 }
             }
-
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
     }
 
     private fun setupButtons() {
-        datesButton?.setOnClickListener {
-            showCalendarWindow()
-        }
-
-        startButton?.setOnClickListener {
-            startAutomation()
-        }
-
-        closeButton?.setOnClickListener {
-            stopSelf()
-        }
-
-        telegramButton?.setOnClickListener {
-            showTelegramSettings()
-        }
-
+        datesButton?.setOnClickListener { showCalendarWindow() }
+        startButton?.setOnClickListener { startAutomation() }
+        closeButton?.setOnClickListener { stopSelf() }
+        telegramButton?.setOnClickListener { showTelegramSettings() }
         pauseButton?.setOnClickListener {
             Toast.makeText(this, "Пауза (в разработке)", Toast.LENGTH_SHORT).show()
         }
-
-        stopButton?.setOnClickListener {
-            stopAutomation()
-        }
+        stopButton?.setOnClickListener { stopAutomation() }
     }
 
     // ==================== TELEGRAM SETTINGS ====================
 
-    private var tgEnableCheck: CheckBox? = null
     private var tgTokenInput: EditText? = null
     private var tgChatInput: EditText? = null
-    private var tgIntervalInput: EditText? = null
-
-    @SuppressLint("ClickableViewAccessibility")
-
 
     private fun showTelegramSettings() {
         floatingView?.visibility = View.GONE
-
         if (telegramSettingsView == null) {
             telegramSettingsView = createTelegramSettingsView()
             telegramSettingsParams = createWindowParams(focusable = true)
@@ -246,7 +204,6 @@ class FloatingWindowService : Service() {
             telegramSettingsParams?.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
             windowManager.updateViewLayout(telegramSettingsView, telegramSettingsParams)
         }
-
         updateTelegramSettingsUI()
     }
 
@@ -258,11 +215,8 @@ class FloatingWindowService : Service() {
         var initialTouchY = 0f
         var isDragging = false
 
-        telegramSettingsView?.setOnTouchListener { v, event ->
-            if (isTouchInsideEditText(event.rawX, event.rawY)) {
-                return@setOnTouchListener false
-            }
-
+        telegramSettingsView?.setOnTouchListener { _, event ->
+            if (isTouchInsideEditText(event.rawX, event.rawY)) return@setOnTouchListener false
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     initialX = telegramSettingsParams?.x ?: 0
@@ -275,9 +229,7 @@ class FloatingWindowService : Service() {
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - initialTouchX
                     val dy = event.rawY - initialTouchY
-                    if (kotlin.math.abs(dx) > 10 || kotlin.math.abs(dy) > 10) {
-                        isDragging = true
-                    }
+                    if (kotlin.math.abs(dx) > 10 || kotlin.math.abs(dy) > 10) isDragging = true
                     if (isDragging) {
                         telegramSettingsParams?.x = initialX + dx.toInt()
                         telegramSettingsParams?.y = initialY + dy.toInt()
@@ -291,25 +243,21 @@ class FloatingWindowService : Service() {
     }
 
     private fun isTouchInsideEditText(rawX: Float, rawY: Float): Boolean {
-        val editTexts = listOf(tgTokenInput, tgChatInput, tgIntervalInput)
+        val editTexts = listOf(tgTokenInput, tgChatInput)
         for (editText in editTexts) {
             editText?.let {
                 val location = IntArray(2)
                 it.getLocationOnScreen(location)
-                val x = location[0]
-                val y = location[1]
-                if (rawX >= x && rawX <= x + it.width && rawY >= y && rawY <= y + it.height) {
-                    return true
-                }
+                if (rawX >= location[0] && rawX <= location[0] + it.width &&
+                    rawY >= location[1] && rawY <= location[1] + it.height) return true
             }
         }
         return false
     }
 
     private fun createTelegramSettingsView(): View {
-        // Внешний контейнер со ScrollView
         val scrollView = ScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(260), dp(500)) // ✅ УВЕЛИЧИЛ ВЫСОТУ для друзей
+            layoutParams = LinearLayout.LayoutParams(dp(260), dp(320))
             setBackgroundResource(R.drawable.floating_bg)
         }
 
@@ -318,84 +266,20 @@ class FloatingWindowService : Service() {
             setPadding(dp(12), dp(12), dp(12), dp(12))
         }
 
-        // ==================== ЛИЧНЫЕ УВЕДОМЛЕНИЯ ====================
-
-        val titlePersonal = TextView(this).apply {
-            text = "⚙️ Личные уведомления"
+        val title = TextView(this).apply {
+            text = "⚙️ Telegram настройки"
             textSize = 14f
             setTextColor(0xFFFFFFFF.toInt())
             setPadding(0, 0, 0, dp(8))
         }
-        layout.addView(titlePersonal)
-
-        tgEnableCheck = CheckBox(this).apply {
-            text = "Включить уведомления"
-            textSize = 12f
-            setTextColor(0xFFFFFFFF.toInt())
-            isChecked = userPreferences.telegramEnabled
-        }
-        layout.addView(tgEnableCheck)
+        layout.addView(title)
 
         addCompactField(layout, "Bot Token:", "123:ABC...", userPreferences.telegramBotToken) {
             tgTokenInput = it
         }
-
-        addCompactField(layout, "Chat ID:", "-1001234567890", userPreferences.telegramChatId, isNumber = false) { // ✅ isNumber = false
+        addCompactField(layout, "Chat ID:", "-1001234567890", userPreferences.telegramChatId, isNumber = false) {
             tgChatInput = it
         }
-
-        addCompactField(layout, "Интервал (мин):", "30", userPreferences.telegramReportIntervalMin.toString(), isNumber = true) {
-            tgIntervalInput = it
-        }
-
-        // ==================== УВЕДОМЛЕНИЯ ДЛЯ ДРУЗЕЙ ====================
-
-        // Разделитель
-        val divider = View(this).apply {
-            setBackgroundColor(0xFF444444.toInt())
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(1)
-            ).apply {
-                topMargin = dp(12)
-                bottomMargin = dp(12)
-            }
-        }
-        layout.addView(divider)
-
-        val titleFriends = TextView(this).apply {
-            text = "👥 Уведомления друзьям"
-            textSize = 14f
-            setTextColor(0xFFFFFFFF.toInt())
-            setPadding(0, 0, 0, dp(8))
-        }
-        layout.addView(titleFriends)
-
-        val friendsDescription = TextView(this).apply {
-            text = "Бот будет отправлять уведомления о свободных сменах в другой чат"
-            textSize = 10f
-            setTextColor(0xFF999999.toInt())
-            setPadding(0, 0, 0, dp(6))
-        }
-        layout.addView(friendsDescription)
-
-        friendsEnableCheck = CheckBox(this).apply {
-            text = "Вкл. уведомления друзьям"
-            textSize = 12f
-            setTextColor(0xFFFFFFFF.toInt())
-            isChecked = userPreferences.friendsNotifyEnabled
-        }
-        layout.addView(friendsEnableCheck)
-
-        addCompactField(layout, "Bot Token:", "123:ABC...", userPreferences.friendsTelegramBotToken) {
-            friendsTokenInput = it
-        }
-
-        addCompactField(layout, "Chat ID:", "-1001234567890", userPreferences.friendsTelegramChatId, isNumber = false) { // ✅ isNumber = false
-            friendsChatInput = it
-        }
-
-        // ==================== КНОПКИ ====================
 
         val buttonsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -407,38 +291,20 @@ class FloatingWindowService : Service() {
             setTextColor(0xFFFFFFFF.toInt())
             setBackgroundResource(R.drawable.button_secondary_bg)
             textSize = 11f
-            layoutParams = LinearLayout.LayoutParams(0, dp(36), 1f).apply {
-                marginEnd = dp(4)
-            }
+            layoutParams = LinearLayout.LayoutParams(0, dp(36), 1f).apply { marginEnd = dp(4) }
             setOnClickListener { testTelegramConnection() }
         }
         buttonsRow.addView(testButton)
-
-        val testFriendsBtn = Button(this).apply {
-            text = "ТЕСТ👥"
-            setTextColor(0xFFFFFFFF.toInt())
-            setBackgroundResource(R.drawable.button_secondary_bg)
-            textSize = 10f
-            layoutParams = LinearLayout.LayoutParams(0, dp(36), 1f).apply {
-                marginStart = dp(3)
-                marginEnd = dp(3)
-            }
-            setOnClickListener { testFriendsConnection() }
-        }
-        buttonsRow.addView(testFriendsBtn)
 
         val saveButton = Button(this).apply {
             text = "СОХР."
             setTextColor(0xFFFFFFFF.toInt())
             setBackgroundResource(R.drawable.button_start_bg)
             textSize = 11f
-            layoutParams = LinearLayout.LayoutParams(0, dp(36), 1f).apply {
-                marginStart = dp(4)
-            }
+            layoutParams = LinearLayout.LayoutParams(0, dp(36), 1f).apply { marginStart = dp(4) }
             setOnClickListener { saveTelegramSettings() }
         }
         buttonsRow.addView(saveButton)
-
         layout.addView(buttonsRow)
 
         val cancelButton = Button(this).apply {
@@ -447,11 +313,8 @@ class FloatingWindowService : Service() {
             setBackgroundResource(R.drawable.button_close_bg)
             textSize = 11f
             layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(36)
-            ).apply {
-                topMargin = dp(4)
-            }
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(36)
+            ).apply { topMargin = dp(4) }
             setOnClickListener { hideTelegramSettings() }
         }
         layout.addView(cancelButton)
@@ -459,23 +322,17 @@ class FloatingWindowService : Service() {
         scrollView.addView(layout)
         return scrollView
     }
-    // ✅ ВСПОМОГАТЕЛЬНЫЙ МЕТОД для полей
+
     private fun addCompactField(
-        parent: LinearLayout,
-        label: String,
-        hint: String,
-        value: String,
-        isNumber: Boolean = false,
-        callback: (EditText) -> Unit
+        parent: LinearLayout, label: String, hint: String,
+        value: String, isNumber: Boolean = false, callback: (EditText) -> Unit
     ) {
-        val labelView = TextView(this).apply {
+        parent.addView(TextView(this).apply {
             text = label
             setTextColor(0xFF999999.toInt())
             textSize = 11f
             setPadding(0, dp(6), 0, dp(3))
-        }
-        parent.addView(labelView)
-
+        })
         val input = EditText(this).apply {
             this.hint = hint
             setText(value)
@@ -485,112 +342,55 @@ class FloatingWindowService : Service() {
             setPadding(dp(8), dp(6), dp(8), dp(6))
             textSize = 12f
             isSingleLine = true
-            maxLines = 1
             isFocusable = true
             isFocusableInTouchMode = true
-
-            // ✅ ИСПРАВЛЕНО: разрешаем минус для Chat ID
             inputType = if (isNumber) {
-                android.text.InputType.TYPE_CLASS_NUMBER or
-                        android.text.InputType.TYPE_NUMBER_FLAG_SIGNED  // ✅ РАЗРЕШАЕТ МИНУС
+                android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
             } else {
-                android.text.InputType.TYPE_CLASS_TEXT or
-                        android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
             }
         }
-
-        parent.addView(input, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            dp(34)
-        ))
-
+        parent.addView(input, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(34)))
         callback(input)
     }
 
     private fun updateTelegramSettingsUI() {
-        // Личные
-        tgEnableCheck?.isChecked = userPreferences.telegramEnabled
         tgTokenInput?.setText(userPreferences.telegramBotToken)
         tgChatInput?.setText(userPreferences.telegramChatId)
-        tgIntervalInput?.setText(userPreferences.telegramReportIntervalMin.toString())
-
-        // Друзья
-        friendsEnableCheck?.isChecked = userPreferences.friendsNotifyEnabled
-        friendsTokenInput?.setText(userPreferences.friendsTelegramBotToken)
-        friendsChatInput?.setText(userPreferences.friendsTelegramChatId)
     }
 
     private fun testTelegramConnection() {
         val token = tgTokenInput?.text?.toString() ?: ""
         val chatId = tgChatInput?.text?.toString() ?: ""
-
         if (token.isBlank() || chatId.isBlank()) {
             Toast.makeText(this, "Заполните Token и Chat ID", Toast.LENGTH_SHORT).show()
             return
         }
-
         TelegramBot.init(
-            token = token,
-            admin = chatId,
+            token = token, admin = chatId,
             devId = userPreferences.deviceId,
             devLabel = userPreferences.deviceLabel,
             wl = userPreferences.whitelist
         )
-        TelegramBot.sendTestMessage()
+        TelegramBot.send("✅ OZ Bot подключен!\n📱 ${userPreferences.deviceLabel} [${userPreferences.deviceId}]")
         Toast.makeText(this, "✅ Тест отправлен! Проверьте Telegram", Toast.LENGTH_SHORT).show()
     }
 
     private fun saveTelegramSettings() {
-        // Личные уведомления
-        val enabled = tgEnableCheck?.isChecked ?: false
         val token = tgTokenInput?.text?.toString() ?: ""
         val chatId = tgChatInput?.text?.toString() ?: ""
-        val interval = tgIntervalInput?.text?.toString()?.toIntOrNull() ?: 30
-
-        userPreferences.telegramEnabled = enabled
         userPreferences.telegramBotToken = token
         userPreferences.telegramChatId = chatId
-        userPreferences.telegramReportIntervalMin = interval
-
-        if (enabled && token.isNotBlank() && chatId.isNotBlank()) {
+        if (token.isNotBlank() && chatId.isNotBlank()) {
             TelegramBot.init(
-                token = token,
-                admin = chatId,
+                token = token, admin = chatId,
                 devId = userPreferences.deviceId,
                 devLabel = userPreferences.deviceLabel,
                 wl = userPreferences.whitelist
             )
         }
-
-        // Уведомления друзьям
-        val friendsEnabled = friendsEnableCheck?.isChecked ?: false
-        val friendsToken = friendsTokenInput?.text?.toString() ?: ""
-        val friendsChatId = friendsChatInput?.text?.toString() ?: ""
-
-        userPreferences.friendsNotifyEnabled = friendsEnabled
-        userPreferences.friendsTelegramBotToken = friendsToken
-        userPreferences.friendsTelegramChatId = friendsChatId
-
         Toast.makeText(this, "✅ Настройки сохранены", Toast.LENGTH_SHORT).show()
         hideTelegramSettings()
-    }
-
-    private fun testFriendsConnection() {
-        val token = friendsTokenInput?.text?.toString()?.trim() ?: ""
-        val chatId = friendsChatInput?.text?.toString()?.trim() ?: ""
-
-        android.util.Log.d("FloatingWindow", "🧪 Testing friends connection...")
-        android.util.Log.d("FloatingWindow", "   Token: ${if (token.isBlank()) "EMPTY" else "OK (${token.length} chars)"}")
-        android.util.Log.d("FloatingWindow", "   Chat ID: $chatId")
-
-        if (token.isBlank() || chatId.isBlank()) {
-            Toast.makeText(this, "⚠️ Заполните данные для друзей", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        TelegramBot.sendToFriendsChat(token, chatId, "✅ Тест уведомлений для друзей!\n\nБот подключен!")
-
-        Toast.makeText(this, "✅ Тест отправлен! Проверьте канал", Toast.LENGTH_LONG).show()
     }
 
     private fun hideTelegramSettings() {
@@ -603,11 +403,9 @@ class FloatingWindowService : Service() {
     @SuppressLint("ClickableViewAccessibility")
     private fun showCalendarWindow() {
         floatingView?.visibility = View.GONE
-
         if (calendarView == null) {
             val inflater = LayoutInflater.from(this)
             calendarView = inflater.inflate(R.layout.dialog_calendar, null)
-
             tvMonthTitle = calendarView?.findViewById(R.id.tvMonthTitle)
             gridDays = calendarView?.findViewById(R.id.gridDays)
             btnPrev = calendarView?.findViewById(R.id.btnPrev)
@@ -617,26 +415,15 @@ class FloatingWindowService : Service() {
 
             btnPrev?.setOnClickListener {
                 currentMonth--
-                if (currentMonth < 0) {
-                    currentMonth = 11
-                    currentYear--
-                }
+                if (currentMonth < 0) { currentMonth = 11; currentYear-- }
                 renderCalendar()
             }
-
             btnNext?.setOnClickListener {
                 currentMonth++
-                if (currentMonth > 11) {
-                    currentMonth = 0
-                    currentYear++
-                }
+                if (currentMonth > 11) { currentMonth = 0; currentYear++ }
                 renderCalendar()
             }
-
-            btnCancel?.setOnClickListener {
-                hideCalendarWindow()
-            }
-
+            btnCancel?.setOnClickListener { hideCalendarWindow() }
             btnOk?.setOnClickListener {
                 updateDatesButtonText()
                 saveSettings()
@@ -649,7 +436,6 @@ class FloatingWindowService : Service() {
         } else {
             calendarView?.visibility = View.VISIBLE
         }
-
         renderCalendar()
     }
 
@@ -658,17 +444,11 @@ class FloatingWindowService : Service() {
         floatingView?.visibility = View.VISIBLE
     }
 
-    private fun isPastDate(
-        day: Int, month: Int, year: Int,
-        todayDay: Int, todayMonth: Int, todayYear: Int
-    ): Boolean {
-        // month: 0..11 (как в Calendar)
+    private fun isPastDate(day: Int, month: Int, year: Int, todayDay: Int, todayMonth: Int, todayYear: Int): Boolean {
         if (year < todayYear) return true
         if (year > todayYear) return false
-
         if (month < todayMonth) return true
         if (month > todayMonth) return false
-
         return day < todayDay
     }
 
@@ -700,7 +480,6 @@ class FloatingWindowService : Service() {
 
         val firstDayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
         val daysInMonth = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
-
         val offset = if (firstDayOfWeek == Calendar.SUNDAY) 6 else firstDayOfWeek - 2
         for (i in 0 until offset) {
             val space = android.widget.Space(this)
@@ -712,7 +491,7 @@ class FloatingWindowService : Service() {
 
         val today = Calendar.getInstance()
         val todayDay = today.get(Calendar.DAY_OF_MONTH)
-        val todayMonth = today.get(Calendar.MONTH) // 0-11
+        val todayMonth = today.get(Calendar.MONTH)
         val todayYear = today.get(Calendar.YEAR)
 
         for (day in 1..daysInMonth) {
@@ -727,38 +506,30 @@ class FloatingWindowService : Service() {
             calendar.set(Calendar.MILLISECOND, 0)
             val dateMillis = calendar.timeInMillis
 
-            // Проверки дат
             val isPast = isPastDate(day, currentMonth, currentYear, todayDay, todayMonth, todayYear)
             val isToday = (day == todayDay && currentMonth == todayMonth && currentYear == todayYear)
 
-            // Стилизация: более сдержанные цвета
             when {
                 isPast -> {
-                    // Прошедшая дата: тёмно-серый фон, светло-серый текст, некликабельна
-                    btn.setTextColor(0xFF9E9E9E.toInt()) // #9E9E9E
+                    btn.setTextColor(0xFF9E9E9E.toInt())
                     btn.isEnabled = false
                     btn.isClickable = false
                     btn.alpha = 0.55f
                     btn.setBackgroundResource(R.drawable.calendar_day_disabled)
                 }
                 isToday -> {
-                    // Сегодня: аккуратная рамка и ненавязчивый фон, белый текст
-                    btn.setTextColor(0xFFFFFFFF.toInt()) // белый
+                    btn.setTextColor(0xFFFFFFFF.toInt())
                     btn.setBackgroundResource(R.drawable.calendar_day_today_subtle)
                     btn.setTypeface(null, android.graphics.Typeface.BOLD)
                 }
                 else -> {
-                    // Будущая дата: обычный стиль
                     btn.setTextColor(0xFFFFFFFF.toInt())
                     btn.setBackgroundResource(R.drawable.calendar_day_selector)
                 }
             }
 
             btn.setPadding(0, 0, 0, 0)
-
             btn.isChecked = selectedDates.contains(dateMillis)
-
-            // Только для сегодняшней и будущих дат слушатель
             if (!isPast) {
                 btn.setOnCheckedChangeListener { _, isChecked ->
                     if (isChecked) selectedDates.add(dateMillis) else selectedDates.remove(dateMillis)
@@ -789,13 +560,10 @@ class FloatingWindowService : Service() {
         floatingView?.visibility = View.VISIBLE
     }
 
-    private fun dp(value: Int): Int {
-        return (value * resources.displayMetrics.density).toInt()
-    }
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private fun updateDatesButtonText() {
-        val count = selectedDates.size
-        datesButton?.text = "Выбрано: $count дн."
+        datesButton?.text = "Выбрано: ${selectedDates.size} дн."
     }
 
     private fun updateStatusText() {
@@ -804,7 +572,6 @@ class FloatingWindowService : Service() {
             SimpleDateFormat("dd.MM", Locale.getDefault()).format(Date(it))
         }
         val time = timeSpinner?.selectedItem?.toString() ?: ""
-
         statusText?.text = "$process | $dates | $time"
     }
 
@@ -814,11 +581,8 @@ class FloatingWindowService : Service() {
         val savedProcess = userPreferences.process
         if (savedProcess.isNotBlank()) {
             val index = processes.indexOf(savedProcess)
-            if (index >= 0) {
-                processSpinner?.setSelection(index)
-            }
+            if (index >= 0) processSpinner?.setSelection(index)
         }
-
 
         val savedDates = userPreferences.targetDates
         selectedDates.clear()
@@ -829,7 +593,6 @@ class FloatingWindowService : Service() {
                     val day = parts[0].toInt()
                     val month = parts[1].toInt() - 1
                     val year = if (parts.size == 3) parts[2].toInt() else Calendar.getInstance().get(Calendar.YEAR)
-
                     val calendar = Calendar.getInstance()
                     calendar.set(year, month, day, 0, 0, 0)
                     calendar.set(Calendar.MILLISECOND, 0)
@@ -843,9 +606,7 @@ class FloatingWindowService : Service() {
         if (savedSlots.isNotEmpty()) {
             val firstSlot = savedSlots[0].toDisplayString()
             val index = timeSlots.indexOf(firstSlot)
-            if (index >= 0) {
-                timeSpinner?.setSelection(index)
-            }
+            if (index >= 0) timeSpinner?.setSelection(index)
         }
 
         val savedSpeed = userPreferences.speedProfile
@@ -862,21 +623,16 @@ class FloatingWindowService : Service() {
         val timeSlot = timeSpinner?.selectedItem?.toString() ?: ""
         val selectedSpeedIndex = speedSpinner?.selectedItemPosition ?: -1
         val speed = speedOptions.getOrNull(selectedSpeedIndex)?.second?.name ?: SpeedProfile.NORMAL.name
-
         val dates = selectedDates.sorted().map { millis ->
             SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(Date(millis))
         }
-
         val parsedSlots = listOf(TimeSlot.parse(timeSlot)).filterNotNull()
-
         userPreferences.warehouse = "Склад 1"
         userPreferences.process = process
         userPreferences.targetDates = dates
         userPreferences.timeSlots = parsedSlots
         userPreferences.speedProfile = speed
-
         userPreferences.isConfigured = true
-
         Log.d("FloatingWindow", "Settings saved: process=$process, dates=$dates, speed=$speed")
     }
 
@@ -887,9 +643,7 @@ class FloatingWindowService : Service() {
             Toast.makeText(this, "Выберите даты", Toast.LENGTH_SHORT).show()
             return
         }
-
         saveSettings()
-
         val service = OzonHireAutomationService.getInstance()
         if (service == null) {
             Toast.makeText(this, "Accessibility Service не активен.\nВключите в настройках", Toast.LENGTH_LONG).show()
@@ -900,7 +654,6 @@ class FloatingWindowService : Service() {
             } catch (e: Exception) {}
             return
         }
-
         try {
             BotController.start()
             showRunningWindow()
@@ -921,18 +674,13 @@ class FloatingWindowService : Service() {
 
     @SuppressLint("ClickableViewAccessibility")
     private fun setupDragging(params: WindowManager.LayoutParams, view: View = floatingView!!) {
-        var initialX = 0
-        var initialY = 0
-        var initialTouchX = 0f
-        var initialTouchY = 0f
-
+        var initialX = 0; var initialY = 0
+        var initialTouchX = 0f; var initialTouchY = 0f
         view.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    initialX = params.x
-                    initialY = params.y
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
+                    initialX = params.x; initialY = params.y
+                    initialTouchX = event.rawX; initialTouchY = event.rawY
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
@@ -948,15 +696,9 @@ class FloatingWindowService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        floatingView?.let {
-            try { windowManager.removeView(it) } catch (e: Exception) {}
-        }
-        calendarView?.let {
-            try { windowManager.removeView(it) } catch (e: Exception) {}
-        }
-        telegramSettingsView?.let {
-            try { windowManager.removeView(it) } catch (e: Exception) {}
-        }
+        floatingView?.let { try { windowManager.removeView(it) } catch (e: Exception) {} }
+        calendarView?.let { try { windowManager.removeView(it) } catch (e: Exception) {} }
+        telegramSettingsView?.let { try { windowManager.removeView(it) } catch (e: Exception) {} }
     }
 
     companion object {

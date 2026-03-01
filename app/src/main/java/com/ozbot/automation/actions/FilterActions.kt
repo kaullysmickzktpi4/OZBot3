@@ -365,4 +365,10 @@ class FilterActions(
             SpeedProfile.SLOW -> slow
         }
     }
+
+    // Добавить в конец класса, перед последней закрывающей скобкой
+    fun destroy() {
+        handler.removeCallbacksAndMessages(null)
+        isConfiguringFilter = false
+    }
 }

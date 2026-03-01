@@ -10,10 +10,8 @@ import com.ozbot.automation.config.TimeSlot
 class UserPreferences(context: Context) {
 
     private val prefs: SharedPreferences = context.getSharedPreferences(
-        "OZBotPreferences",
-        Context.MODE_PRIVATE
+        "OZBotPreferences", Context.MODE_PRIVATE
     )
-
     private val gson = Gson()
 
     companion object {
@@ -27,30 +25,18 @@ class UserPreferences(context: Context) {
         private const val KEY_IS_CONFIGURED = "is_configured"
         private const val KEY_AUTO_START = "auto_start"
         private const val KEY_SPEED_PROFILE = "speed_profile"
-
-        // Telegram (личные уведомления)
         private const val KEY_TG_BOT_TOKEN = "telegram_bot_token"
-        private const val KEY_TG_CHAT_ID = "telegram_chat_id"       // оставлено для совместимости
+        private const val KEY_TG_CHAT_ID = "telegram_chat_id"
         private const val KEY_TG_ENABLED = "telegram_enabled"
         private const val KEY_TG_REPORT_INTERVAL = "telegram_report_interval"
-
-        // Telegram — управление (admin + whitelist)
         private const val KEY_ADMIN_CHAT_ID = "admin_chat_id"
         private const val KEY_WHITELIST = "tg_whitelist"
-
-        // Device identity
         private const val KEY_DEVICE_ID = "device_id"
         private const val KEY_DEVICE_LABEL = "device_label"
-
-        // Telegram для друзей
-        private const val KEY_FRIENDS_NOTIFY_ENABLED = "friends_notify_enabled"
-        private const val KEY_FRIENDS_TG_BOT_TOKEN = "friends_telegram_bot_token"
-        private const val KEY_FRIENDS_TG_CHAT_ID = "friends_telegram_chat_id"
     }
 
     // ==================== DEVICE IDENTITY ====================
 
-    /** Уникальный ID устройства — генерируется один раз и сохраняется навсегда */
     val deviceId: String
         get() {
             var id = prefs.getString(KEY_DEVICE_ID, "") ?: ""
@@ -61,7 +47,6 @@ class UserPreferences(context: Context) {
             return id
         }
 
-    /** Человекочитаемое имя устройства, редактируется пользователем */
     var deviceLabel: String
         get() = prefs.getString(KEY_DEVICE_LABEL, Build.MODEL) ?: Build.MODEL
         set(value) = prefs.edit().putString(KEY_DEVICE_LABEL, value).apply()
@@ -93,9 +78,7 @@ class UserPreferences(context: Context) {
             val type = object : TypeToken<List<String>>() {}.type
             return gson.fromJson(json, type)
         }
-        set(value) {
-            prefs.edit().putString(KEY_TARGET_DATES, gson.toJson(value)).apply()
-        }
+        set(value) = prefs.edit().putString(KEY_TARGET_DATES, gson.toJson(value)).apply()
 
     var timeSlots: List<TimeSlot>
         get() {
@@ -103,9 +86,7 @@ class UserPreferences(context: Context) {
             val type = object : TypeToken<List<TimeSlot>>() {}.type
             return gson.fromJson(json, type)
         }
-        set(value) {
-            prefs.edit().putString(KEY_TIME_SLOTS, gson.toJson(value)).apply()
-        }
+        set(value) = prefs.edit().putString(KEY_TIME_SLOTS, gson.toJson(value)).apply()
 
     var allowQueue: Boolean
         get() = prefs.getBoolean(KEY_ALLOW_QUEUE, true)
@@ -127,13 +108,12 @@ class UserPreferences(context: Context) {
         get() = prefs.getBoolean(KEY_AUTO_START, false)
         set(value) = prefs.edit().putBoolean(KEY_AUTO_START, value).apply()
 
-    // ==================== TELEGRAM (личный канал уведомлений) ====================
+    // ==================== TELEGRAM ====================
 
     var telegramBotToken: String
         get() = prefs.getString(KEY_TG_BOT_TOKEN, "") ?: ""
         set(value) = prefs.edit().putString(KEY_TG_BOT_TOKEN, value).apply()
 
-    /** Оставлено для совместимости с FloatingWindowService */
     var telegramChatId: String
         get() = adminChatId
         set(value) { adminChatId = value }
@@ -146,37 +126,19 @@ class UserPreferences(context: Context) {
         get() = prefs.getInt(KEY_TG_REPORT_INTERVAL, 30)
         set(value) = prefs.edit().putInt(KEY_TG_REPORT_INTERVAL, value).apply()
 
-    // ==================== TELEGRAM (admin + whitelist) ====================
-
-    /** Chat ID администратора — получает все уведомления и имеет полный доступ */
     var adminChatId: String
         get() = prefs.getString(KEY_ADMIN_CHAT_ID, "") ?: ""
         set(value) = prefs.edit().putString(KEY_ADMIN_CHAT_ID, value).apply()
 
-    /** Whitelist chatId пользователей которые могут управлять этим устройством */
     var whitelist: Set<String>
         get() {
             val json = prefs.getString(KEY_WHITELIST, "[]") ?: "[]"
             val type = object : TypeToken<List<String>>() {}.type
             return (gson.fromJson(json, type) as List<String>).toSet()
         }
-        set(value) {
-            prefs.edit().putString(KEY_WHITELIST, gson.toJson(value.toList())).apply()
-        }
+        set(value) = prefs.edit().putString(KEY_WHITELIST, gson.toJson(value.toList())).apply()
 
-    // ==================== TELEGRAM (для друзей) ====================
-
-    var friendsNotifyEnabled: Boolean
-        get() = prefs.getBoolean(KEY_FRIENDS_NOTIFY_ENABLED, false)
-        set(value) = prefs.edit().putBoolean(KEY_FRIENDS_NOTIFY_ENABLED, value).apply()
-
-    var friendsTelegramBotToken: String
-        get() = prefs.getString(KEY_FRIENDS_TG_BOT_TOKEN, "") ?: ""
-        set(value) = prefs.edit().putString(KEY_FRIENDS_TG_BOT_TOKEN, value).apply()
-
-    var friendsTelegramChatId: String
-        get() = prefs.getString(KEY_FRIENDS_TG_CHAT_ID, "") ?: ""
-        set(value) = prefs.edit().putString(KEY_FRIENDS_TG_CHAT_ID, value).apply()
+    // ==================== UTILS ====================
 
     fun isValid(): Boolean {
         return warehouse.isNotBlank() &&

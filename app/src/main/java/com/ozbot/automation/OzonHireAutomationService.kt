@@ -16,7 +16,6 @@ import com.ozbot.automation.actions.WarehouseActions
 import com.ozbot.automation.core.ScreenDetector
 import com.ozbot.automation.core.StateManager
 import com.ozbot.automation.monitoring.FreezeDetector
-import com.ozbot.automation.monitoring.MemoryManager
 import com.ozbot.automation.monitoring.ShiftMonitor
 import com.ozbot.automation.monitoring.ShiftScanner
 import com.ozbot.automation.utils.Logger
@@ -37,6 +36,7 @@ import java.lang.ref.WeakReference
 import com.ozbot.utils.ScreenshotHelper
 import java.text.SimpleDateFormat
 import java.util.Locale
+import com.ozbot.automation.monitoring.MemoryManager
 
 class OzonHireAutomationService : AccessibilityService() {
 
@@ -166,12 +166,13 @@ class OzonHireAutomationService : AccessibilityService() {
         calendarActions = CalendarActions(
             prefs = prefs,
             stateManager = stateManager,
-            repo = repo,           // ← ДОБАВЛЕНО
+            repo = repo,
             logger = logger,
             gestureHelper = gestureHelper,
             navigationHelper = navigationHelper,
             screenDetector = screenDetector,
-            findOzonRoot = ::findOzonRoot
+            findOzonRoot = ::findOzonRoot,
+            scope = scope
         )
 
         timePickerActions = TimePickerActions(
@@ -216,6 +217,7 @@ class OzonHireAutomationService : AccessibilityService() {
         timePickerActions.destroy()
         TelegramBot.stopPollingCommands()
         TelegramBot.setCommandHandler(null)
+        filterActions.destroy()
         scope?.cancel()
         scope = null
         handler.removeCallbacksAndMessages(null)
@@ -245,7 +247,6 @@ class OzonHireAutomationService : AccessibilityService() {
         } catch (_: Exception) {
             SpeedProfile.NORMAL
         }
-        stateManager.lastProfileChangeTime = System.currentTimeMillis()
     }
 
     private fun getEffectiveProfile(): SpeedProfile = currentProfile
@@ -452,22 +453,27 @@ class OzonHireAutomationService : AccessibilityService() {
                 node.getBoundsInScreen(rect)
 
                 if (rect.top < 400 && rect.right > 800) closeButtons.add(node)
-                if (desc.contains("close") || desc.contains("закрыть") ||
+                else if (desc.contains("close") || desc.contains("закрыть") ||
                     desc.contains("dismiss") || desc.contains("cancel")) closeButtons.add(node)
+                // ✅ FIX: нода не добавлена в список — recycle сразу
+                else try { node.recycle() } catch (_: Exception) {}
             }
             null
         }
 
+        var clicked = false
         for (btn in closeButtons) {
             try {
-                if (btn.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                if (!clicked && btn.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
                     gestureHelper.updateLastClickTime()
-                    return true
+                    clicked = true
                 }
             } catch (_: Exception) {}
+            // ✅ FIX: recycle все ноды из списка после использования
+            try { btn.recycle() } catch (_: Exception) {}
         }
 
-        return false
+        return clicked
     }
 
     private fun tryDismissWithBack(): Boolean {

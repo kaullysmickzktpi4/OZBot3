@@ -4,7 +4,6 @@ import android.view.accessibility.AccessibilityNodeInfo
 import com.ozbot.automation.core.StateManager
 import com.ozbot.automation.utils.Logger
 import com.ozbot.automation.utils.NodeTreeHelper
-import com.ozbot.telegram.TelegramBot
 
 class FreezeDetector(
     private val stateManager: StateManager,
@@ -69,7 +68,7 @@ class FreezeDetector(
         if (frozenTime >= FREEZE_TIMEOUT_MS) {
             val restarts = stateManager.restartCount.incrementAndGet()
             logger.w("🥶 FREEZE DETECTED! UI unchanged for ${frozenTime / 1000}s. Restart #$restarts")
-            TelegramBot.sendFreezeAlert(frozenTime / 1000, restarts)
+            // ✅ FIX: удалён TelegramBot.sendFreezeAlert() — метод удалён из TelegramBot
             return true
         }
 
